@@ -1,0 +1,31 @@
+# Supabase project configuration.
+#
+# This file pins per-function JWT verification so it survives redeploys.
+# Previously these settings existed only on the server (set via the dashboard
+# toggle or the `--no-verify-jwt` deploy flag) and were NOT versioned — meaning
+# a plain `supabase functions deploy <name>` could silently re-enable JWT
+# verification and break the webhooks / unsubscribe links.
+#
+# Anything not listed here uses the default `verify_jwt = true`, which is correct
+# for every user-facing function (send-campaign, send-email, send-test-email,
+# manage-domain, check-domain-status, verify-domains-cron, stripe-checkout,
+# stripe-portal) and for the cron-invoked functions (process-scheduled-campaigns,
+# cleanup-delivery-timestamps), which pg_cron calls with the service-role key.
+
+project_id = "dmgrxgtcmcurjvmxlfvw"
+
+# --- Public / externally-triggered functions: JWT verification MUST be off ---
+# The caller cannot present a Supabase JWT, so the platform gate would reject the
+# request before our code runs. Each of these verifies the caller itself.
+
+[functions.sendgrid-webhook]
+verify_jwt = false  # SendGrid event webhook — ECDSA P-256 signature verified in-code
+
+[functions.stripe-webhook]
+verify_jwt = false  # Stripe webhook — Stripe-Signature verified in-code
+
+[functions.unsubscribe]
+verify_jwt = false  # opened straight from an email client (GET, no auth header); secured by HMAC token
+
+[functions.resubscribe]
+verify_jwt = false  # public opt-in endpoint
