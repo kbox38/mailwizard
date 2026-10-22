@@ -18,6 +18,7 @@ import { Upload, Check, ArrowRight, ArrowLeft } from 'lucide-react';
 import Papa from 'papaparse';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { mapContactRows, type ImportedContact } from '../../utils/contactImport';
 import toast from 'react-hot-toast';
 
 interface ImportCSVModalProps {
@@ -118,8 +119,8 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
    * @param contacts - Raw mapped contact objects, each guaranteed to have an `email` field
    * @returns Deduplicated array with one entry per unique email
    */
-  const deduplicateByEmail = (contacts: any[]): any[] => {
-    const seen = new Map<string, any>();
+  const deduplicateByEmail = (contacts: ImportedContact[]): ImportedContact[] => {
+    const seen = new Map<string, ImportedContact>();
     for (const contact of contacts) {
       // Normalize to lowercase so "John@Example.com" and "john@example.com" collapse to one
       const key = contact.email.trim().toLowerCase();
@@ -158,32 +159,15 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
 
           groupId = newGroup.id;
           toast.success(`Created new group: ${newGroupName}`);
-        } catch (error: any) {
-          toast.error(error.message || 'Failed to create group');
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : 'Failed to create group');
           setImporting(false);
           return;
         }
       }
 
       // Step 2: Prepare contacts for import
-      const contacts = csvData
-        .map(row => {
-          const mappedRow: any = { 
-            user_id: user.id, 
-            status: 'active' 
-          };
-
-          // Map CSV columns to database fields
-          Object.entries(columnMapping).forEach(([csvCol, dbField]) => {
-            const value = row[csvCol]?.trim();
-            if (value) {
-              mappedRow[dbField] = value;
-            }
-          });
-
-          return mappedRow;
-        })
-        .filter(contact => contact.email); // Only include rows with email
+      const contacts = mapContactRows(csvData, columnMapping, user.id);
 
       // Validate that we have contacts to import
       if (contacts.length === 0) {
@@ -246,7 +230,7 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
             if (memberError) {
               console.error('Group membership error:', memberError);
               // Non-fatal - contacts were still imported successfully
-              toast.warning('Contacts imported but some group assignments failed');
+              toast('Contacts imported but some group assignments failed', { icon: '⚠️' });
             } else {
               console.log(`Added ${insertedContacts.length} contacts to group`);
             }
@@ -261,14 +245,14 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
         onSuccess();
         onClose();
 
-      } catch (error: any) {
+      } catch (error) {
         console.error('Import error:', error);
-        toast.error(error.message || 'Failed to import contacts');
+        toast.error(error instanceof Error ? error.message : 'Failed to import contacts');
       }
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Import process error:', error);
-      toast.error(error.message || 'An error occurred during import');
+      toast.error(error instanceof Error ? error.message : 'An error occurred during import');
     } finally {
       setImporting(false);
     }
@@ -386,7 +370,7 @@ export const ImportCSVModal = ({ isOpen, onClose, onSuccess, groups }: ImportCSV
             <div>
               <h3 className="text-lg font-semibold mb-2">Map Columns</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Match your CSV columns to contact fields. Email is required.
+                Match your CSV columns to contact fields. Email is required. Columns set to “Don't import” will be ignored; you can leave them in your CSV.
               </p>
             </div>
 

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Plus, Upload, Trash2, UserPlus } from 'lucide-react';
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { contactPageQuery, CONTACT_PAGE_SIZE } from '../../lib/contactQueries';
 import { AddContactModal } from '../../components/contacts/AddContactModal';
 import { AddGroupModal } from '../../components/contacts/AddGroupModal';
 import { ImportCSVModal } from '../../components/contacts/ImportCSVModal';
@@ -41,6 +42,11 @@ export const Contacts = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [matchingCount, setMatchingCount] = useState(0);
+  const [totalContactsCount, setTotalContactsCount] = useState(0);
+  const [loadError, setLoadError] = useState(false);
+  const requestId = useRef(0);
   
   // Modal states
   const [showAddContactModal, setShowAddContactModal] = useState(false);
@@ -48,80 +54,76 @@ export const Contacts = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user) {
-      fetchGroups();
-      fetchContacts();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (selectedGroupId) {
-      fetchContactsInGroup(selectedGroupId);
-    } else {
-      fetchContacts();
-    }
-  }, [selectedGroupId]);
-
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     if (!user) return;
     
     try {
-      const { data, error } = await supabase
-        .from('contact_groups')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('name');
+      const [groupResult, countResult] = await Promise.all([
+        supabase.from('contact_groups').select('*').eq('user_id', user.id).order('name'),
+        supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+      ]);
+      const { data, error } = groupResult;
       
       if (error) throw error;
       setGroups(data || []);
+      const { count, error: countError } = countResult;
+      if (countError) throw countError;
+      setTotalContactsCount(count || 0);
     } catch (error) {
       console.error('Error fetching groups:', error);
       toast.error('Failed to load contact groups');
     }
-  };
+  }, [user]);
 
-  const fetchContacts = async () => {
+  const fetchContacts = useCallback(async () => {
     if (!user) return;
-    
+    const currentRequest = ++requestId.current;
     setLoading(true);
+    setLoadError(false);
+    setSelectedContacts(new Set());
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      
+      const { data, error, count } = await contactPageQuery(supabase, user.id, selectedGroupId, searchQuery, page);
+      if (currentRequest !== requestId.current) return;
       if (error) throw error;
-      setContacts(data || []);
+      // Deleting the last row on a page should return to the last populated page.
+      if (page > 0 && page * CONTACT_PAGE_SIZE >= (count || 0)) {
+        setPage(Math.max(0, Math.ceil((count || 0) / CONTACT_PAGE_SIZE) - 1));
+        return;
+      }
+      setContacts((data || []) as unknown as Contact[]);
+      setMatchingCount(count || 0);
     } catch (error) {
+      if (currentRequest !== requestId.current) return;
       console.error('Error fetching contacts:', error);
+      setContacts([]);
+      setMatchingCount(0);
+      setLoadError(true);
       toast.error('Failed to load contacts');
     } finally {
-      setLoading(false);
+      if (currentRequest === requestId.current) setLoading(false);
     }
+  }, [user, selectedGroupId, searchQuery, page]);
+
+  useEffect(() => { void fetchGroups(); }, [fetchGroups]);
+
+  useEffect(() => {
+    setLoading(true);
+    setSelectedContacts(new Set());
+    const timeout = setTimeout(() => { void fetchContacts(); }, 250);
+    return () => {
+      clearTimeout(timeout);
+      requestId.current += 1;
+    };
+  }, [fetchContacts]);
+
+  const selectGroup = (groupId: string | null) => {
+    setSelectedGroupId(groupId);
+    setPage(0);
   };
 
-  const fetchContactsInGroup = async (groupId: string) => {
-    if (!user) return;
-    
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('contact_group_members')
-        .select('contact_id, contacts(*)')
-        .eq('group_id', groupId);
-      
-      if (error) throw error;
-      
-      const groupContacts = data?.map(item => item.contacts).filter(Boolean) as Contact[];
-      setContacts(groupContacts || []);
-    } catch (error) {
-      console.error('Error fetching group contacts:', error);
-      toast.error('Failed to load contacts');
-    } finally {
-      setLoading(false);
-    }
+  const updateSearch = (value: string) => {
+    setSearchQuery(value);
+    setPage(0);
   };
 
   const handleDeleteContact = async (contactId: string) => {
@@ -136,11 +138,7 @@ export const Contacts = () => {
       if (error) throw error;
       
       toast.success('Contact deleted successfully');
-      if (selectedGroupId) {
-        fetchContactsInGroup(selectedGroupId);
-      } else {
-        fetchContacts();
-      }
+      fetchContacts();
       fetchGroups(); // Refresh group counts
     } catch (error) {
       console.error('Error deleting contact:', error);
@@ -163,11 +161,7 @@ export const Contacts = () => {
       
       toast.success(`Deleted ${selectedContacts.size} contact(s)`);
       setSelectedContacts(new Set());
-      if (selectedGroupId) {
-        fetchContactsInGroup(selectedGroupId);
-      } else {
-        fetchContacts();
-      }
+      fetchContacts();
       fetchGroups();
     } catch (error) {
       console.error('Error bulk deleting:', error);
@@ -201,12 +195,11 @@ export const Contacts = () => {
       
       // If deleted group was selected, switch to All Contacts
       if (selectedGroupId === groupId) {
-        setSelectedGroupId(null);
-        fetchContacts();
+        selectGroup(null);
       }
       
       fetchGroups();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting group:', error);
       toast.error('Failed to delete group');
     }
@@ -230,17 +223,7 @@ export const Contacts = () => {
     }
   };
 
-  const filteredContacts = contacts.filter(contact => {
-    const searchLower = searchQuery.toLowerCase();
-    return (
-      contact.email.toLowerCase().includes(searchLower) ||
-      contact.first_name?.toLowerCase().includes(searchLower) ||
-      contact.last_name?.toLowerCase().includes(searchLower) ||
-      contact.company?.toLowerCase().includes(searchLower)
-    );
-  });
-
-  const totalContactsCount = contacts.length;
+  const filteredContacts = contacts;
 
   return (
     <AppLayout currentPath="/app/contacts">
@@ -261,7 +244,7 @@ export const Contacts = () => {
           <div className="space-y-2">
             {/* All Contacts */}
             <button
-              onClick={() => setSelectedGroupId(null)}
+              onClick={() => selectGroup(null)}
               className={`w-full text-left px-4 py-3 rounded-lg border transition-all duration-200 ${
                 selectedGroupId === null
                   ? 'bg-[#f3ba42] border-black font-semibold'
@@ -289,7 +272,7 @@ export const Contacts = () => {
                 }`}
               >
                 <button
-                  onClick={() => setSelectedGroupId(group.id)}
+                  onClick={() => selectGroup(group.id)}
                   className="w-full text-left px-4 py-3 pr-12"
                 >
                   <div className="flex items-center justify-between">
@@ -332,7 +315,7 @@ export const Contacts = () => {
                 }
               </h1>
               <p className="text-gray-600">
-                {filteredContacts.length} {filteredContacts.length === 1 ? 'contact' : 'contacts'}
+                {matchingCount} {matchingCount === 1 ? 'contact' : 'contacts'}
               </p>
             </div>
 
@@ -343,8 +326,8 @@ export const Contacts = () => {
                   type="text"
                   placeholder="Search by name, email, or company..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  icon={Search}
+                  onChange={(e) => updateSearch(e.target.value)}
+                  aria-label="Search contacts by name, email, or company"
                 />
               </div>
               <Button
@@ -390,6 +373,11 @@ export const Contacts = () => {
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#f3ba42] mb-4"></div>
                 <p className="text-gray-600">Loading contacts...</p>
               </div>
+            ) : loadError ? (
+              <div className="bg-white border border-black rounded-lg p-12 text-center">
+                <p className="text-gray-600 mb-4">Unable to load contacts.</p>
+                <Button onClick={() => void fetchContacts()}>Try Again</Button>
+              </div>
             ) : filteredContacts.length === 0 ? (
               <div className="bg-white border border-black rounded-lg p-12 text-center">
                 {searchQuery ? (
@@ -399,7 +387,7 @@ export const Contacts = () => {
                     <p className="text-gray-600 mb-6">
                       No contacts match your search "{searchQuery}"
                     </p>
-                    <Button onClick={() => setSearchQuery('')}>Clear Search</Button>
+                    <Button onClick={() => updateSearch('')}>Clear Search</Button>
                   </>
                 ) : selectedGroupId ? (
                   <>
@@ -440,6 +428,7 @@ export const Contacts = () => {
                         <th className="px-4 py-3 text-left">
                           <input
                             type="checkbox"
+                            aria-label="Select all contacts on this page"
                             checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
                             onChange={handleSelectAll}
                             className="w-4 h-4 rounded border-black"
@@ -506,6 +495,15 @@ export const Contacts = () => {
                     </tbody>
                   </table>
                 </div>
+                <div className="flex items-center justify-between gap-4 border-t border-gray-200 px-4 py-3">
+                  <span className="text-sm text-gray-600">
+                    {page * CONTACT_PAGE_SIZE + 1}–{page * CONTACT_PAGE_SIZE + contacts.length} of {matchingCount} contacts
+                  </span>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" disabled={loading || page === 0} onClick={() => setPage(page - 1)}>Previous</Button>
+                    <Button size="sm" variant="secondary" disabled={loading || (page + 1) * CONTACT_PAGE_SIZE >= matchingCount} onClick={() => setPage(page + 1)}>Next</Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -546,11 +544,7 @@ export const Contacts = () => {
         contactId={editingContactId}
         onClose={() => setEditingContactId(null)}
         onSuccess={() => {
-          if (selectedGroupId) {
-            fetchContactsInGroup(selectedGroupId);
-          } else {
-            fetchContacts();
-          }
+          fetchContacts();
           fetchGroups();
         }}
         groups={groups}
