@@ -45,7 +45,24 @@ export async function queueEmailCampaign(data: EmailJobData) {
 }
 
 // Get queue statistics
-export async function getEmailQueueStats() {
+export async function getEmailQueueStats(canViewUser?: (userId: string) => Promise<boolean>) {
+  if (canViewUser) {
+    const counts = { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, total: 0 };
+    const visible = new Map<string, Promise<boolean>>();
+    for (const state of ['waiting','active','completed','failed','delayed'] as const) {
+      for (let offset=0;;offset+=500) {
+        const jobs=await emailQueue.getJobs([state],offset,offset+499,true);
+        for (const job of jobs) {
+          const userId=job?.data?.userId;
+          if (!userId) continue;
+          if (!visible.has(userId)) visible.set(userId,canViewUser(userId));
+          if (await visible.get(userId)) { counts[state]++;counts.total++; }
+        }
+        if (jobs.length<500) break;
+      }
+    }
+    return counts;
+  }
   const [waiting, active, completed, failed, delayed] = await Promise.all([
     emailQueue.getWaitingCount(),
     emailQueue.getActiveCount(),

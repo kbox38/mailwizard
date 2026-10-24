@@ -2,12 +2,22 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
-function load(file) {
+function load(file,resolve=require) {
   const module = {exports:{}};
   const output = ts.transpileModule(fs.readFileSync(file,'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
-  new Function('module','exports',output)(module,module.exports);
+  new Function('module','exports','require',output)(module,module.exports,resolve);
   return module.exports;
 }
+test('admin queue statistics exclude protected users and unknown owners',async()=>{
+  const queue=load('backend/src/queues/emailQueue.ts',name=>{
+    if(name==='bullmq')return {Queue:class {async getJobs([state]){return state==='waiting'?[{data:{userId:'visible'}},{data:{userId:'hidden'}},{data:{}}]:[];}}};
+    if(name.includes('bullmq'))return {defaultQueueOptions:{}};
+    throw new Error(name);
+  });
+  const checked=[];
+  const stats=await queue.getEmailQueueStats(async id=>{checked.push(id);return id==='visible';});
+  assert.equal(stats.waiting,1);assert.equal(stats.total,1);assert.deepEqual(checked,['visible','hidden']);
+});
 const {effectivePlan,hasPaidAccess}=load('src/lib/platformAccess.ts');
 const {requirePaidAccess,reserveEmailQuota}=load('supabase/functions/_shared/paidAccess.ts');
 test('legacy free, inactive, suspended, and explicitly revoked plans have no access',()=>{
@@ -60,4 +70,20 @@ test('SendGrid webhook rejects unsigned/forged payloads and accepts a real ECDSA
   assert.equal((await handler(request('[{}]',headers))).status,401);
   assert.equal((await handler(request(body,headers))).status,200);
   assert.equal(databaseClients,1);
+});
+test('admin billing lookup conceals protected accounts and fails closed before database/provider reads',async()=>{
+  const vm=require('node:vm');
+  const source=fs.readFileSync('supabase/functions/admin-billing-status/index.ts','utf8');
+  const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+  for(const fixture of [{visible:false,status:404},{visible:true,status:200},{visible:true,error:{message:'unavailable'},status:503}]) {
+    let handler,reads=0,providerCalls=0;
+    const caller={auth:{getUser:async()=>({data:{user:{id:'admin'}},error:null})},rpc:async name=>name==='is_platform_admin'?{data:true}:{data:fixture.visible,error:fixture.error}};
+    const server={from:()=>{reads++;const query={select:()=>query,eq:()=>query,single:async()=>({data:{stripe_subscription_id:null},error:null})};return query;}};
+    vm.runInNewContext(output,{exports:{},require:name=>name.includes('supabase-js')?{createClient:(_url,key)=>key==='service-key'?server:caller}:{},
+      Deno:{env:{get:name=>({SUPABASE_SERVICE_ROLE_KEY:'service-key',SUPABASE_URL:'https://example.test',SUPABASE_ANON_KEY:'public-key'})[name]},serve:fn=>{handler=fn;}},
+      Response,AbortSignal,fetch:async()=>{providerCalls++;throw new Error('Provider must not be called');}});
+    const response=await handler(new Request('https://example.test',{method:'POST',headers:{authorization:'Bearer admin-token','Content-Type':'application/json'},body:JSON.stringify({user_id:'11111111-1111-4111-8111-111111111111'})}));
+    assert.equal(response.status,fixture.status);assert.equal(reads,fixture.status===200?1:0);assert.equal(providerCalls,0);
+    if(fixture.status===404) assert.deepEqual(await response.json(),{error:'Account not found'});
+  }
 });

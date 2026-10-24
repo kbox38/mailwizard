@@ -123,7 +123,11 @@ router.get('/queue/stats', async (req, res) => {
   try {
     const { data: admin, error } = await res.locals.caller.rpc('is_platform_admin');
     if (error || admin !== true) return res.status(403).json({ error: 'Admin access required' });
-    const stats = await getEmailQueueStats();
+    const stats = await getEmailQueueStats(async userId=>{
+      const visibility=await res.locals.caller.rpc('admin_can_manage_user',{p_user_id:userId});
+      if(visibility.error) throw new Error('Unable to verify account visibility');
+      return visibility.data===true;
+    });
     res.json(stats);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

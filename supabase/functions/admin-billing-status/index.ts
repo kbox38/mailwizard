@@ -10,6 +10,7 @@ Deno.serve(async (req: Request) => {
     const serviceKey=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
     const url=Deno.env.get('SUPABASE_URL') || '';
     const authorization=req.headers.get('authorization') || '';
+    let adminCaller: ReturnType<typeof createClient> | null = null;
     if (!authorization.startsWith('Bearer ') || !serviceKey) return reply({error:'Authentication required'},401);
     if (authorization!==`Bearer ${serviceKey}`) {
       const caller=createClient(url,Deno.env.get('SUPABASE_ANON_KEY') || '',{global:{headers:{Authorization:authorization}}});
@@ -17,9 +18,15 @@ Deno.serve(async (req: Request) => {
       if(error||!user) return reply({error:'Invalid session'},401);
       const access=await caller.rpc('is_platform_admin');
       if(access.error||access.data!==true) return reply({error:'Administrator access required'},403);
+      adminCaller=caller;
     }
     const {user_id}=await req.json();
     if(typeof user_id!=='string'||!/^[0-9a-f-]{36}$/i.test(user_id)) return reply({error:'Invalid account'},400);
+    if(adminCaller) {
+      const access=await adminCaller.rpc('admin_can_manage_user',{p_user_id:user_id});
+      if(access.error) return reply({error:'Unable to verify account access'},503);
+      if(access.data!==true) return reply({error:'Account not found'},404);
+    }
     const service=createClient(url,serviceKey);
     const {data:profile,error}=await service.from('profiles').select('stripe_subscription_id').eq('id',user_id).single();
     if(error||!profile) return reply({error:'Account not found'},404);

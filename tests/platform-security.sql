@@ -1,4 +1,4 @@
--- Run after the paid/admin migration within a transaction; always ROLLBACK.
+-- Run after all platform migrations within a transaction; always ROLLBACK.
 DO $$
 DECLARE actor uuid; sid uuid; target uuid; actor_email text;
 BEGIN
@@ -9,7 +9,8 @@ BEGIN
   sid:=gen_random_uuid();
   INSERT INTO auth.sessions(id,user_id,created_at,updated_at,aal) VALUES(sid,actor,now(),now(),'aal1');
   SELECT p.id INTO target FROM public.profiles p JOIN auth.users u ON u.id=p.id
-    WHERE p.id<>actor AND u.email_confirmed_at IS NOT NULL LIMIT 1;
+    WHERE p.id<>actor AND u.email_confirmed_at IS NOT NULL
+      AND NOT EXISTS(SELECT 1 FROM private.admin_hidden_accounts h WHERE h.user_id=p.id) LIMIT 1;
   IF target IS NULL THEN RAISE EXCEPTION 'A second verified account is required'; END IF;
   PERFORM set_config('test.actor',actor::text,true);
   PERFORM set_config('test.actor_email',actor_email,true);

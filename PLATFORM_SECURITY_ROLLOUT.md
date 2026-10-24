@@ -48,3 +48,11 @@ The earlier SendGrid abuse notification is an unresolved provider-side incident 
 Run local checks with `npm run typecheck`, `npm run build`, `npm run test:security`, `npm run test:contacts`, and `npm run test:platform-ui`. Browser fixtures use installed Microsoft Edge and mock Supabase; they send no real emails or payments. SQL security checks must run inside a transaction ending in `ROLLBACK`.
 
 The optional standalone Node/Redis service was compiled, but its hosted runtime and Redis were not inspected. The frontend uses the verified Supabase Edge Functions for administration and sending.
+
+## Protected-account privacy
+
+The private `admin_hidden_accounts` registry excludes protected accounts from every platform administrator's user search, pagination counts, plan distribution, activity totals, contacts, campaigns, usage, and audit activity. The restriction uses the Auth UUID and survives email changes. Admins cannot edit this registry, change a protected account's plan or suspension state, probe its entitlement, or retrieve its billing status. Hidden and nonexistent accounts return the same unavailable result. No identity is embedded in the frontend to enforce this rule.
+
+The account owner retains normal access, and server sending/billing operations continue to work. Database/project owners and server credentials retain their operational access. The optional Node queue's administrator statistics also filter protected owners; deployment of that standalone service remains separate.
+
+Rollback regression tests exercise two administrator identities, direct data access, searches, aggregate counts, audit mentions, forbidden mutations, private-registry permissions, and the protected owner's normal access. Billing endpoint and queue-statistic tests cover direct API bypass attempts.
