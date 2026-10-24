@@ -6,16 +6,6 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
-interface Contact {
-  id: string;
-  email: string;
-  first_name: string | null;
-  last_name: string | null;
-  company: string | null;
-  role: string | null;
-  industry: string | null;
-  status: string;
-}
 
 interface EditContactModalProps {
   isOpen: boolean;

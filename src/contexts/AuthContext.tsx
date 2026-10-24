@@ -2,20 +2,14 @@
  * Authentication Context - OTP Email Verification
  */
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { normalizeEmail, savePendingVerification, clearPendingVerification, RESEND_COOLDOWN_SECONDS, signUpWithEmail } from '../lib/emailVerification';
+import type { Profile } from '../lib/supabase';
 
-interface Profile {
-  id: string;
-  email: string;
-  full_name: string | null;
-  plan_tier: string;
-  subscription_status: string;
-  created_at: string;
-}
 
 interface PasswordRequirements {
   minLength: boolean;
@@ -29,7 +23,8 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
+  hasAccess: boolean;
+  signUp: (email: string, password: string, fullName: string) => Promise<User | null>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -44,49 +39,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasAccess, setHasAccess] = useState(false);
+  const activeUserId = useRef<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      activeUserId.current = session?.user.id ?? null;
       if (session?.user) {
+        setLoading(true);
         fetchProfile(session.user.id);
       } else {
         setLoading(false);
       }
-    });
+    }).catch(() => { setUser(null); setLoading(false); });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      activeUserId.current = session?.user.id ?? null;
       if (session?.user) {
-        fetchProfile(session.user.id);
+        // Run outside the Auth lock held while listeners are notified.
+        const userId = session.user.id;
+        window.setTimeout(() => { void fetchProfile(userId); }, 0);
       } else {
         setProfile(null);
+        setHasAccess(false);
+        setLoading(false);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    const refresh = () => { void fetchProfile(user.id); };
+    const interval = window.setInterval(refresh, 60000);
+    window.addEventListener('focus', refresh);
+    return () => { window.clearInterval(interval); window.removeEventListener('focus', refresh); };
+  }, [user?.id]);
+
   const fetchProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      const [{ data, error }, access] = await Promise.all([supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .single(), supabase.rpc('has_platform_access')]);
+
+      if (activeUserId.current !== userId) return;
 
       if (error) {
         console.error('Error fetching profile:', error);
+        setProfile(null);
+        setHasAccess(false);
         setLoading(false);
         return;
       }
 
       setProfile(data);
+      setHasAccess(!access.error && access.data === true);
     } catch (error) {
       console.error('Error fetching profile:', error);
+      if (activeUserId.current === userId) setHasAccess(false);
     } finally {
       setLoading(false);
     }
@@ -100,33 +118,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
-  email,
-  password,
-  options: {
-    data: {
-      full_name: fullName,
-    },
-    emailRedirectTo: `${window.location.origin}/auth/callback`,
-  },
-});
-
-      if (error) throw error;
-
-      if (!data.user) {
-        throw new Error('Signup failed - no user returned');
-      }
+      const data = await signUpWithEmail(supabase, email, password, fullName, window.location.origin);
 
       if (data.user && !data.session) {
-        toast.success('Account created! Check your email for verification code.', {
+        const resendAfter = Date.now() + RESEND_COOLDOWN_SECONDS * 1000;
+        savePendingVerification(email, resendAfter);
+        toast.success('Check your inbox for your confirmation email.', {
           duration: 5000,
         });
         
         navigate('/verify-email-otp', { 
-          state: { email: email },
+          state: { email: normalizeEmail(email), resendAfter },
           replace: true 
         });
       } else {
+        clearPendingVerification();
         toast.success('Account created! Logging you in...');
         
         setUser(data.user);
@@ -143,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         navigate('/app/dashboard');
       }
+      return data.session?.user ?? null;
       
     } catch (error: any) {
       console.error('Signup error:', error);
@@ -153,18 +160,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizeEmail(email),
         password,
       });
 
       if (error) {
-        if (error.message?.includes('Email not confirmed')) {
+        if (error.code === 'email_not_confirmed') {
+          savePendingVerification(email);
+          navigate('/verify-email-otp', { state: { email: normalizeEmail(email) } });
           throw new Error('Please verify your email before signing in. Check your inbox for the verification code.');
         }
         throw error;
       }
 
       setUser(data.user);
+      clearPendingVerification();
+      activeUserId.current = data.user.id;
+      await fetchProfile(data.user.id);
       
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
@@ -179,7 +191,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       toast.success('Welcome back!');
-      navigate('/app/dashboard');
+      const adminAccess = await supabase.rpc('is_platform_admin');
+      navigate(!adminAccess.error && adminAccess.data === true ? '/admin/dashboard' : '/app/dashboard');
       
     } catch (error: any) {
       console.error('Login error:', error);
@@ -194,6 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(null);
       setProfile(null);
+      setHasAccess(false);
       toast.success('Logged out successfully');
       navigate('/login');
       
@@ -237,6 +251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     profile,
     loading,
+    hasAccess,
     signUp,
     signIn,
     signOut,

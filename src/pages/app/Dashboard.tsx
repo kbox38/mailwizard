@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { loadDailyEngagement } from '../../lib/engagementQueries';
 import { useNavigate } from 'react-router-dom';
 import {
   Mail,
@@ -25,7 +26,6 @@ import {
   Plus,
   Send,
   FileText,
-  Upload,
   BarChart3,
   Zap,
   Clock,
@@ -155,51 +155,13 @@ export default function Dashboard() {
     try {
       const { startDate, endDate } = getDateRangeBounds();
 
-      const { data: userCampaigns } = await supabase
-        .from('campaigns')
-        .select('id')
-        .eq('user_id', user.id);
-
-      if (!userCampaigns || userCampaigns.length === 0) {
-        setTimeSeriesData([]);
-        return;
-      }
-
-      const campaignIds = userCampaigns.map(c => c.id);
-
-      const { data: analytics } = await supabase
-        .from('email_events')
-        .select('event_type, timestamp, campaign_id')
-        .in('campaign_id', campaignIds)
-        .gte('timestamp', startDate)
-        .lte('timestamp', endDate)
-        .order('timestamp', { ascending: true });
-
-      if (!analytics || analytics.length === 0) {
-        setTimeSeriesData([]);
-        return;
-      }
-
-      const dataByDate = new Map<string, { opens: number; clicks: number }>();
+      const dataByDate = await loadDailyEngagement(supabase, user.id, startDate, endDate);
       const dates = generateDateRange(startDate, endDate);
       dates.forEach(date => {
-        dataByDate.set(date, { opens: 0, clicks: 0 });
+        if (!dataByDate.has(date)) dataByDate.set(date, { opens: 0, clicks: 0 });
       });
 
-      analytics.forEach(event => {
-        const date = new Date(event.timestamp).toISOString().split('T')[0];
-        const current = dataByDate.get(date) || { opens: 0, clicks: 0 };
-        
-        if (event.event_type === 'open') {
-          current.opens++;
-        } else if (event.event_type === 'click') {
-          current.clicks++;
-        }
-        
-        dataByDate.set(date, current);
-      });
-
-      const timeSeriesArray: TimeSeriesDataPoint[] = Array.from(dataByDate.entries()).map(
+      const timeSeriesArray: TimeSeriesDataPoint[] = Array.from(dataByDate.entries()).sort(([a], [b]) => a.localeCompare(b)).map(
         ([date, data]) => ({
           date,
           opens: data.opens,
@@ -210,6 +172,7 @@ export default function Dashboard() {
       setTimeSeriesData(timeSeriesArray);
     } catch (error) {
       console.error('Failed to load time series data:', error);
+      toast.error('Could not load engagement chart. Please try again later.');
       setTimeSeriesData([]);
     }
   }

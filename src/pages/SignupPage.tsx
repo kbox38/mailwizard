@@ -7,16 +7,11 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Logo } from '../components/ui/Logo';
 import { PLAN_PRICING } from '../config/planLimits';
+import { authErrorMessage } from '../lib/emailVerification';
 
-type PlanType = 'free' | 'pro' | 'pro_plus';
+type PlanType = 'pro' | 'pro_plus';
 
 const planFeatures = {
-  free: [
-    '500 emails per month',
-    'Up to 500 contacts',
-    'Basic email templates',
-    'Basic analytics',
-  ],
   pro: [
     '25,000 emails per month',
     'Up to 5,000 contacts',
@@ -37,7 +32,7 @@ const planFeatures = {
 
 export const SignupPage = () => {
   const [step, setStep] = useState<'plan' | 'details'>('plan');
-  const [selectedPlan, setSelectedPlan] = useState<PlanType>('free');
+  const [selectedPlan, setSelectedPlan] = useState<PlanType>('pro');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -76,25 +71,19 @@ export const SignupPage = () => {
 
     try {
       // Store selected plan in localStorage before signup
-      if (selectedPlan !== 'free') {
-        localStorage.setItem('pending_plan', selectedPlan);
-      }
+      localStorage.setItem('pending_plan', selectedPlan);
 
       // Create account with signUp from AuthContext
-      await signUp(email, password, fullName);
+      const user = await signUp(email, password, fullName);
       
       // If email verification is required, user will be redirected to verify email
       // The selected plan is stored and will be processed after login
       
       // If no email verification required (auto-confirm), process immediately
-      const { data: { user } } = await supabase.auth.getUser();
       
       if (user && user.email_confirmed_at) {
         // Email already confirmed, process checkout immediately
-        if (selectedPlan === 'free') {
-          localStorage.removeItem('pending_plan');
-          navigate('/app/dashboard');
-        } else {
+        {
           // Create Stripe checkout session
           const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
             'stripe-checkout',
@@ -120,7 +109,7 @@ export const SignupPage = () => {
       // and pending_plan will be processed after they verify and login
       
     } catch (err: any) {
-      setError(err.message || 'Failed to sign up');
+      setError(authErrorMessage(err));
       setLoading(false);
     }
   };
@@ -132,7 +121,7 @@ export const SignupPage = () => {
         {/* Header */}
         <div className="bg-white border-b border-gray-200">
           <div className="container mx-auto px-4 py-4">
-            <Logo variant="full" size="md" onClick={() => navigate('/')} />
+            <Logo variant="default" size="md" onClick={() => navigate('/')} />
           </div>
         </div>
 
@@ -149,8 +138,8 @@ export const SignupPage = () => {
             </div>
 
             {/* Plan Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              {(['free', 'pro', 'pro_plus'] as PlanType[]).map((plan) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              {(['pro', 'pro_plus'] as PlanType[]).map((plan) => (
                 <button
                   key={plan}
                   onClick={() => handlePlanSelect(plan)}
@@ -220,7 +209,7 @@ export const SignupPage = () => {
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
             <Logo 
-              variant="full" 
+              variant="default"
               size="lg"
               onClick={() => navigate('/')}
             />
@@ -293,7 +282,6 @@ export const SignupPage = () => {
               disabled={loading}
             >
               {loading ? 'Creating Account...' : 
-                selectedPlan === 'free' ? 'Create Free Account' : 
                 `Continue to Payment • $${PLAN_PRICING[selectedPlan].price}/mo`
               }
             </Button>

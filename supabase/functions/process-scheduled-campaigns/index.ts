@@ -13,6 +13,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendCampaign } from '../_shared/campaignSender.ts';
+import { requirePaidAccess } from '../_shared/paidAccess.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -27,16 +28,31 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders, status: 200 });
   }
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const authHeader = req.headers.get('authorization') || '';
+  const cronSecret = Deno.env.get('CAMPAIGN_CRON_SECRET') || '';
+  const cronAuthorized = !!cronSecret && req.headers.get('x-cron-secret') === cronSecret;
+  let callerId: string | null = null;
+  if (!cronAuthorized && (authHeader !== `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` || !SUPABASE_SERVICE_ROLE_KEY)) {
+    if (!authHeader.startsWith('Bearer ')) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+    const caller = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { global: { headers: { Authorization: authHeader } } });
+    const { data: { user }, error } = await caller.auth.getUser();
+    if (error || !user) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+    try { await requirePaidAccess(caller, user.id); } catch { return new Response('Subscription required', { status: 403, headers: corsHeaders }); }
+    callerId = user.id;
+  }
 
   // Find all scheduled campaigns whose time has arrived
-  const { data: campaigns, error: fetchError } = await supabase
+  let dueQuery = supabase
     .from('campaigns')
     .select('*')
     .eq('status', 'scheduled')
     .lte('scheduled_at', new Date().toISOString())
     .order('scheduled_at', { ascending: true });
+  if (callerId) dueQuery = dueQuery.eq('user_id', callerId);
+  const { data: campaigns, error: fetchError } = await dueQuery;
 
   if (fetchError) {
     console.error('Failed to fetch scheduled campaigns:', fetchError);
@@ -55,6 +71,12 @@ serve(async (req) => {
   const results: { campaignId: string; sent: number; failed: number }[] = [];
 
   for (const campaign of campaigns) {
+    try { await requirePaidAccess(supabase, campaign.user_id); }
+    catch (error: any) {
+      if (error.status !== 403) continue;
+      await supabase.from('campaigns').update({ status: 'draft', scheduled_at: null }).eq('id', campaign.id).eq('status', 'scheduled');
+      continue;
+    }
     // Mark as sending immediately to prevent double-processing (optimistic lock:
     // only succeeds if the row is still 'scheduled').
     const { data: locked, error: lockError } = await supabase

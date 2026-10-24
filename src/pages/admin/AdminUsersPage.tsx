@@ -1,426 +1,77 @@
-import { useState, useEffect } from 'react';
-import {
-  Users,
-  Search,
-  Filter,
-  MoreVertical,
-  Eye,
-  UserX,
-  UserCheck,
-  Trash2,
-  ExternalLink
-} from 'lucide-react';
-import { adminApiService, UserData } from '../../lib/adminApi';
+import { useEffect, useRef, useState } from 'react';
+import { Search, Users } from 'lucide-react';
+import { platformAdmin, PlatformUser } from '../../lib/platformAdmin';
+import { AccountPlan, effectivePlan } from '../../lib/platformAccess';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
 import toast from 'react-hot-toast';
 
+const planNames = { none: 'No active plan', pro: 'Pro', pro_plus: 'Pro Plus' };
 export const AdminUsersPage = () => {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<PlatformUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [planFilter, setPlanFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
-  const [userDetails, setUserDetails] = useState<UserData | null>(null);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
-
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(1);
+  const [revision, setRevision] = useState(0);
+  const [selected, setSelected] = useState<PlatformUser | null>(null);
+  const [mode, setMode] = useState<'plan' | 'suspend'>('plan');
+  const [plan, setPlan] = useState<AccountPlan | 'billing'>('pro');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    fetchUsers();
-  }, [page, planFilter, statusFilter]);
-
-  const fetchUsers = async () => {
+    let active = true;
+    setLoading(true); setError('');
+    platformAdmin.users(appliedSearch,planFilter,page).then(data => {
+      if (active) { setUsers(data.users); setTotal(data.total); setPages(data.total_pages); }
+    }).catch(failure => { if (active) setError(failure.message || 'Unable to load users.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [appliedSearch,planFilter,page,revision]);
+  useEffect(() => { if (selected) dialog.current?.showModal(); else dialog.current?.close(); }, [selected]);
+  const open = (user: PlatformUser, action: 'plan' | 'suspend') => { setMode(action); setPlan(effectivePlan(user)==='none'?'pro':effectivePlan(user)); setReason(''); setError(''); setSelected(user); };
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!selected || saving) return;
+    setSaving(true);
     try {
-      setLoading(true);
-      const data = await adminApiService.getUsers({
-        page,
-        pageSize: 20,
-        search: search || undefined,
-        plan: planFilter !== 'all' ? planFilter : undefined,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-      });
-      setUsers(data.users);
-      setTotalPages(data.totalPages);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      toast.error('Failed to load users');
-    } finally {
-      setLoading(false);
-    }
+      if (mode==='plan') await platformAdmin.setPlan(selected.id,plan,reason);
+      else await platformAdmin.setSuspended(selected.id,!selected.account_suspended,reason);
+      toast.success('Account updated.'); setSelected(null); setRevision(value=>value+1);
+    } catch (failure) { toast.error(failure instanceof Error?failure.message:'Unable to update account.'); }
+    finally { setSaving(false); }
   };
-
-  const handleSearch = () => {
-    setPage(1);
-    fetchUsers();
-  };
-
-  const handleViewDetails = async (userId: string) => {
-    try {
-      const data = await adminApiService.getUserById(userId);
-      setUserDetails(data);
-      setShowDetailsModal(true);
-    } catch (error) {
-      console.error('Error fetching user details:', error);
-      toast.error('Failed to load user details');
-    }
-  };
-
-  const handleSuspendUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to suspend this user?')) return;
-
-    const reason = prompt('Enter suspension reason:');
-    if (!reason) return;
-
-    try {
-      await adminApiService.suspendUser(userId, reason);
-      toast.success('User suspended successfully');
-      fetchUsers();
-    } catch (error) {
-      console.error('Error suspending user:', error);
-      toast.error('Failed to suspend user');
-    }
-  };
-
-  const handleActivateUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to activate this user?')) return;
-
-    try {
-      await adminApiService.activateUser(userId);
-      toast.success('User activated successfully');
-      fetchUsers();
-    } catch (error) {
-      console.error('Error activating user:', error);
-      toast.error('Failed to activate user');
-    }
-  };
-
-  const handleDeleteUser = async (userId: string) => {
-    if (!confirm('⚠️ WARNING: This will permanently delete the user and all their data. This action cannot be undone. Are you absolutely sure?')) {
-      return;
-    }
-
-    const confirmation = prompt('Type "DELETE" to confirm:');
-    if (confirmation !== 'DELETE') {
-      toast.error('Deletion cancelled');
-      return;
-    }
-
-    try {
-      await adminApiService.deleteUser(userId);
-      toast.success('User deleted successfully');
-      fetchUsers();
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      toast.error('Failed to delete user');
-    }
-  };
-
-  const handleImpersonate = async (userId: string) => {
-    if (!confirm('You are about to impersonate this user. This action is logged. Continue?')) return;
-
-    try {
-      const data = await adminApiService.impersonateUser(userId);
-      localStorage.setItem('accessToken', data.token);
-      toast.success('Now impersonating user. Redirecting...');
-      setTimeout(() => {
-        window.location.href = '/app';
-      }, 1000);
-    } catch (error) {
-      console.error('Error impersonating user:', error);
-      toast.error('Failed to impersonate user');
-    }
-  };
-
-  return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-serif font-bold mb-2">User Management</h1>
-        <p className="text-gray-600">View and manage all platform users</p>
-      </div>
-
-      <div className="card mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="md:col-span-2">
-            <Input
-              type="text"
-              placeholder="Search by email or organization..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              icon={Search}
-            />
-          </div>
-          <div>
-            <select
-              value={planFilter}
-              onChange={(e) => setPlanFilter(e.target.value)}
-              className="input-base"
-            >
-              <option value="all">All Plans</option>
-              <option value="free">Free</option>
-              <option value="pro">Pro</option>
-              <option value="pro_plus">Pro Plus</option>
-            </select>
-          </div>
-          <div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="input-base"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="suspended">Suspended</option>
-            </select>
-          </div>
-        </div>
-        <div className="mt-4">
-          <Button variant="primary" size="sm" onClick={handleSearch}>
-            Apply Filters
-          </Button>
-        </div>
-      </div>
-
-      <div className="card">
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin w-12 h-12 border-4 border-gold border-t-transparent rounded-full mx-auto mb-4" />
-            <p className="text-gray-600">Loading users...</p>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-semibold">Organization</th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold">Plan</th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold">Status</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">Emails/Month</th>
-                    <th className="text-right py-3 px-4 text-sm font-semibold">Created</th>
-                    <th className="text-center py-3 px-4 text-sm font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr
-                      key={user.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                    >
-                      <td className="py-4 px-4">
-                        <div className="font-medium">{user.name}</div>
-                        <div className="text-sm text-gray-600">{user.email}</div>
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                            user.plan === 'pro_plus'
-                              ? 'bg-purple text-white'
-                              : user.plan === 'pro'
-                              ? 'bg-gold text-black'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {user.plan.replace('_', ' ').toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                            user.status === 'active'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {user.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <div className="text-sm font-medium">
-                          {user.emailsSentThisMonth.toLocaleString()} / {user.monthlyLimit.toLocaleString()}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {((user.emailsSentThisMonth / user.monthlyLimit) * 100).toFixed(0)}% used
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 text-right text-sm text-gray-600">
-                        {new Date(user.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleViewDetails(user.id)}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="View Details"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleImpersonate(user.id)}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="Impersonate User"
-                          >
-                            <ExternalLink size={16} />
-                          </button>
-                          {user.status === 'active' ? (
-                            <button
-                              onClick={() => handleSuspendUser(user.id)}
-                              className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
-                              title="Suspend User"
-                            >
-                              <UserX size={16} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleActivateUser(user.id)}
-                              className="p-2 hover:bg-green-50 text-green-600 rounded-lg transition-colors"
-                              title="Activate User"
-                            >
-                              <UserCheck size={16} />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteUser(user.id)}
-                            className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
-                            title="Delete User"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  Previous
-                </Button>
-                <span className="text-sm text-gray-600">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                >
-                  Next
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {showDetailsModal && userDetails && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-2xl font-serif font-bold">Organization Details</h2>
-              <button
-                onClick={() => setShowDetailsModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Organization Info</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-600">Name</p>
-                    <p className="font-medium">{userDetails.name}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Plan</p>
-                    <p className="font-medium">{userDetails.plan.toUpperCase()}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Status</p>
-                    <p className="font-medium">{userDetails.status}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Created</p>
-                    <p className="font-medium">{new Date(userDetails.createdAt).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Email Usage</h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex justify-between mb-2">
-                    <span className="text-sm text-gray-600">This Month</span>
-                    <span className="font-semibold">
-                      {userDetails.emailsSentThisMonth.toLocaleString()} / {userDetails.monthlyLimit.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-gold rounded-full h-2"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (userDetails.emailsSentThisMonth / userDetails.monthlyLimit) * 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Team Members</h3>
-                <div className="space-y-2">
-                  {userDetails.users.map((member, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">{member.email}</p>
-                        <p className="text-sm text-gray-600">{member.role}</p>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {member.lastLogin
-                          ? `Last login: ${new Date(member.lastLogin).toLocaleDateString()}`
-                          : 'Never logged in'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {userDetails.billingInfo && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Billing Info</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Stripe Customer ID</span>
-                      <span className="font-mono text-sm">{userDetails.billingInfo.stripeCustomerId}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-600">Current Period Ends</span>
-                      <span className="font-medium">
-                        {new Date(userDetails.billingInfo.currentPeriodEnd).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+  return <div className="p-4 sm:p-8">
+    <div className="mb-8"><h1 className="text-3xl font-serif font-bold mb-2">User Management</h1><p className="text-gray-600">See who uses the platform and manage subscription access</p></div>
+    <form className="card mb-6 flex flex-wrap items-end gap-4" onSubmit={event=>{event.preventDefault();setAppliedSearch(search.trim());setPage(1);}}>
+      <div className="flex-1 min-w-48"><label htmlFor="admin-search" className="text-sm font-semibold block mb-2">Search users</label><input id="admin-search" className="input-base w-full" placeholder="Name or email" value={search} onChange={event=>setSearch(event.target.value)} maxLength={200} /></div>
+      <div><label htmlFor="admin-plan-filter" className="text-sm font-semibold block mb-2">Plan</label><select id="admin-plan-filter" className="input-base" value={planFilter} onChange={event=>{setPlanFilter(event.target.value);setPage(1);}}><option value="all">All plans</option><option value="pro">Pro</option><option value="pro_plus">Pro Plus</option><option value="none">No active plan</option></select></div>
+      <Button type="submit" variant="secondary"><Search size={16} className="mr-2" />Search</Button>
+    </form>
+    {error && <p role="alert" className="card mb-4 text-red-700">{error} <button className="underline" onClick={()=>setRevision(value=>value+1)}>Try again</button></p>}
+    <div className="card overflow-x-auto" aria-busy={loading}>
+      <p className="text-sm text-gray-600 mb-4">{loading?'Loading users...':`${total} accounts`}</p>
+      <table className="w-full text-sm text-left"><thead className="border-b border-gray-200 text-gray-600"><tr>{['Account','Plan and access','Activity','Actions'].map(label=><th key={label} scope="col" className="pb-3 pr-5 font-semibold">{label}</th>)}</tr></thead>
+        <tbody className="divide-y divide-gray-100">{users.map(user=><tr key={user.id}>
+          <td className="py-4 pr-5"><p className="font-semibold">{user.full_name || user.email}</p><p className="text-gray-600">{user.email}</p><p className="text-xs text-gray-500 mt-1">{user.is_admin?'Administrator · ':''}{user.email_verified?'Email verified':'Awaiting verification'}</p></td>
+          <td className="py-4 pr-5"><p className="font-semibold">{planNames[effectivePlan(user)]}</p><p className={user.has_access?'text-green-700':'text-gray-500'}>{user.account_suspended?'Suspended':user.has_access?'Access active':'Access restricted'}</p><p className="text-xs text-gray-500 mt-1">{user.admin_plan_override!==null?'Admin override':`Billing: ${user.subscription_status}`}</p></td>
+          <td className="py-4 pr-5"><p>{user.contacts.toLocaleString()} contacts · {user.campaigns} campaigns</p><p className="text-xs text-gray-500 mt-1">Last sign-in: {user.last_sign_in_at?new Date(user.last_sign_in_at).toLocaleDateString():'Never'}</p></td>
+          <td className="py-4"><div className="flex flex-wrap gap-2"><Button variant="secondary" size="sm" onClick={()=>open(user,'plan')}>Manage plan</Button><Button variant="tertiary" size="sm" onClick={()=>open(user,'suspend')}>{user.account_suspended?'Restore':'Suspend'}</Button></div></td>
+        </tr>)}</tbody></table>
+      {!loading && users.length===0 && <div className="text-center py-12 text-gray-600"><Users size={32} className="mx-auto mb-3" />No users match your search.</div>}
+      <div className="mt-6 flex justify-between items-center gap-4"><Button variant="secondary" size="sm" disabled={page<=1||loading} onClick={()=>setPage(value=>value-1)}>Previous</Button><span className="text-sm text-gray-600">Page {page} of {pages}</span><Button variant="secondary" size="sm" disabled={page>=pages||loading} onClick={()=>setPage(value=>value+1)}>Next</Button></div>
     </div>
-  );
+    <dialog ref={dialog} aria-labelledby="admin-action-title" className="rounded-xl p-0 w-full max-w-md backdrop:bg-black/40" onCancel={event=>{if(saving)event.preventDefault();else setSelected(null);}} onClose={()=>{if(!saving)setSelected(null);}}>
+      <form onSubmit={save} className="p-6 space-y-4">
+        <h2 id="admin-action-title" className="text-xl font-serif font-bold">{mode==='plan'?'Manage Plan':selected?.account_suspended?'Restore Account':'Suspend Account'}</h2><p className="text-sm text-gray-600 break-all">{selected?.email}</p>
+        {mode==='plan' && <><label className="block text-sm font-semibold" htmlFor="admin-plan-choice">Access plan</label><select id="admin-plan-choice" className="input-base w-full" value={plan} disabled={saving} onChange={event=>setPlan(event.target.value as AccountPlan|'billing')}><option value="pro">Grant Pro</option><option value="pro_plus">Grant Pro Plus</option><option value="none">Remove platform access</option><option value="billing">Use billing subscription</option></select><p className="text-xs text-gray-600">Admin grants override subscription access. Changing access does not create or cancel Stripe billing.</p></>}
+        {mode==='suspend' && <p className="text-sm text-gray-600">{selected?.account_suspended?'Restore this account’s access according to its plan.':'Block platform access and revoke the account’s sessions.'}</p>}
+        <label htmlFor="admin-action-reason" className="block text-sm font-semibold">Reason</label><textarea id="admin-action-reason" className="input-base w-full" rows={3} minLength={3} maxLength={500} required disabled={saving} value={reason} onChange={event=>setReason(event.target.value)} placeholder="Recorded in the admin activity log" />
+        <div className="flex justify-end gap-3"><Button type="button" variant="secondary" disabled={saving} onClick={()=>setSelected(null)}>Cancel</Button><Button type="submit" disabled={saving||reason.trim().length<3} loading={saving}>Save changes</Button></div>
+      </form>
+    </dialog>
+  </div>;
 };

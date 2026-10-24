@@ -18,7 +18,7 @@
  * ============================================================================
  */
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { CheckCircle2, XCircle, Loader2, Mail } from 'lucide-react';
 
@@ -111,7 +111,7 @@ export default function Unsubscribe() {
           <p className="text-gray-500 text-sm mb-4">Changed your mind?</p>
 
           <Link
-            to="/resubscribe"
+            to={`/resubscribe?${new URLSearchParams({token:searchParams.get('resubscribe_token') || '',email:email || ''})}`}
             className="inline-block px-8 py-3 rounded-lg font-semibold text-white transition-all hover:opacity-90 active:scale-95"
             style={{ backgroundColor: '#f3ba42' }}
           >

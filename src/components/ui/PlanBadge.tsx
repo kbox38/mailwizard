@@ -24,13 +24,13 @@ export const PlanBadge: React.FC<PlanBadgeProps> = ({ className = '' }) => {
   }
 
   const badgeStyles = {
-    free: 'bg-gray-100 text-gray-700 border border-gray-300',
+    none: 'bg-gray-100 text-gray-700 border border-gray-300',
     pro: 'bg-gold/10 text-gold border border-gold/30',
     pro_plus: 'bg-black text-white border border-black',
   };
 
   const badgeText = {
-    free: 'FREE',
+    none: 'NO ACTIVE PLAN',
     pro: 'PRO',
     pro_plus: 'PRO+',
   };

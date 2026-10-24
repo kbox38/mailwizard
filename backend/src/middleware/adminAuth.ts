@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import supabase from '../config/supabase';
+import supabase from '../config/supabase.js';
 
 // Admin role permissions
 const ADMIN_PERMISSIONS: Record<string, string[]> = {

@@ -1,5 +1,6 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { requirePaidAccess } from '../_shared/paidAccess.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,21 +35,30 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-    const authHeader = req.headers.get('Authorization')!;
+    const authHeader = req.headers.get('Authorization') || '';
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
-      throw new Error('Unauthorized');
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (!user.email_confirmed_at) {
+      return new Response(JSON.stringify({ error: 'Verify your email before sending' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    const caller = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { global: { headers: { Authorization: authHeader } } });
+    await requirePaidAccess(caller, user.id);
+
     // Check rate limit for test emails
-    const { data: rateLimitResult } = await supabase.rpc('check_rate_limit', {
+    const { data: rateLimitResult, error: rateLimitError } = await supabase.rpc('check_rate_limit', {
       p_user_id: user.id,
       p_endpoint: 'send-test-email',
       p_max_requests: 20,
       p_window_minutes: 60
     });
+    if (rateLimitError || !rateLimitResult || typeof rateLimitResult.allowed !== 'boolean') {
+      throw new Error('Unable to check email rate limit');
+    }
 
     if (rateLimitResult && !rateLimitResult.allowed) {
       return new Response(
@@ -78,7 +88,7 @@ Deno.serve(async (req: Request) => {
       to_email,
       subject,
       html_body,
-      from_email = user.email || 'hello@mailwizard.com',
+      from_email = 'noreply@mail.mailwizard.io',
       from_name = user.user_metadata?.full_name || 'Mail Wizard'
     } = requestData;
 
@@ -92,6 +102,22 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
+    }
+
+    // Test messages may only go to the signed-in user's verified mailbox.
+    if (to_email.trim().toLowerCase() !== user.email?.trim().toLowerCase()) {
+      return new Response(JSON.stringify({ error: 'Test emails can only be sent to your verified account email' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const senderDomain = from_email.split('@')[1]?.toLowerCase();
+    if (senderDomain !== 'mail.mailwizard.io') {
+      const { data: domain, error: domainError } = await supabase.from('sending_domains')
+        .select('id').eq('user_id', user.id).eq('domain', senderDomain || '')
+        .eq('verification_status', 'verified').maybeSingle();
+      if (domainError || !domain) {
+        return new Response(JSON.stringify({ error: 'Use a verified sending domain owned by your account' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     console.log(`Sending test email to ${to_email}`);
@@ -184,7 +210,7 @@ Deno.serve(async (req: Request) => {
         error: error.message || 'Failed to send test email'
       }),
       {
-        status: 500,
+        status: error.status || 500,
         headers: {
           ...corsHeaders,
           'Content-Type': 'application/json',

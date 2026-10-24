@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { defaultQueueOptions } from '../config/bullmq';
+import { defaultQueueOptions } from '../config/bullmq.js';
 
 // Email job data interface
 export interface EmailJobData {

@@ -17,6 +17,7 @@
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { verifyRecipientToken } from '../_shared/recipientToken.ts';
 
 // CORS headers
 const corsHeaders = {
@@ -44,7 +45,10 @@ Deno.serve(async (req: Request) => {
 
   try {
     // Parse request body
-    const { email } = await req.json();
+    if(req.method!=='POST') return new Response('Method not allowed',{status:405,headers:corsHeaders});
+    const { email, token } = await req.json();
+    const recipient = await verifyRecipientToken(token,Deno.env.get('UNSUBSCRIBE_TOKEN_SECRET') || '');
+    if(!recipient) return new Response(JSON.stringify({error:'Open the unsubscribe link from your email, then choose Re-subscribe.'}),{status:403,headers:{...corsHeaders,'Content-Type':'application/json'}});
     
     // Validate email
     if (!email || typeof email !== 'string') {
@@ -84,7 +88,7 @@ Deno.serve(async (req: Request) => {
     const { data: contacts, error: findError } = await supabase
       .from('contacts')
       .select('id, email, user_id, status')
-      .eq('email', normalizedEmail);
+      .eq('email', normalizedEmail).eq('id',recipient.contactId);
     
     if (findError) {
       console.error('Database error:', findError);
@@ -158,6 +162,8 @@ Deno.serve(async (req: Request) => {
     // Record resubscribe event
     await supabase.from('email_events').insert({
       contact_id: contact.id,
+      campaign_id: recipient.campaignId,
+      email: contact.email,
       event_type: 'resubscribe',
       timestamp: new Date().toISOString(),
       metadata: {

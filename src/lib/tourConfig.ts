@@ -1,7 +1,7 @@
 // src/lib/tourConfig.ts
 // Tour step definitions for Driver.js
 
-import { DriveStep } from 'driver.js';
+import { DriveStep, Config } from 'driver.js';
 
 export const tourSteps: DriveStep[] = [
   {
@@ -70,14 +70,13 @@ export const tourSteps: DriveStep[] = [
 ];
 
 // Custom styling to match Email Wizard theme
-export const tourConfig = {
+export const tourConfig: Config = {
   showProgress: true,
   showButtons: ['next', 'previous', 'close'],
   progressText: 'Step {{current}} of {{total}}',
   nextBtnText: 'Next →',
   prevBtnText: '← Back',
   doneBtnText: 'Finish ✓',
-  closeBtnText: 'Skip',
   overlayColor: 'rgba(0, 0, 0, 0.5)',
   popoverClass: 'email-wizard-tour-popover',
   animate: true,

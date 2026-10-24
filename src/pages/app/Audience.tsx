@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, Search, Filter, Tag, Download } from 'lucide-react';
+import { UserPlus, Filter, Tag, Download } from 'lucide-react';
 import { AppLayout } from '../../components/app/AppLayout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';

@@ -9,11 +9,13 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
+import { effectivePlan } from '../../lib/platformAccess';
 import { Logo } from '../ui/Logo';
 import { useNavigate } from 'react-router-dom';
 
 
-const navigation = [
+const navigation: { name: string; icon: typeof LayoutDashboard; href: string; badge?: string }[] = [
   { name: 'Dashboard', icon: LayoutDashboard, href: '/app' },
   { name: 'Contacts', icon: Users, href: '/app/contacts' },
   { name: 'Campaigns', icon: Mail, href: '/app/campaigns' },
@@ -28,6 +30,8 @@ interface SidebarProps {
 
 export const Sidebar = ({ currentPath }: SidebarProps) => {
   const { profile, signOut } = useAuth();
+  const { admin } = useAdminAuth();
+  const plan = effectivePlan(profile);
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -56,7 +60,7 @@ export const Sidebar = ({ currentPath }: SidebarProps) => {
         {/* Logo - Clickable, navigates to dashboard */}
         <div className="mb-4">
           <Logo 
-            variant="full" 
+            variant="default"
             size="lg"
             onClick={() => navigate('/app')}
           />
@@ -68,11 +72,11 @@ export const Sidebar = ({ currentPath }: SidebarProps) => {
             <p className="text-sm font-semibold truncate">{profile.full_name || profile.email}</p>
             <div
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${getPlanColor(
-                profile.plan_type
+                plan
               )}`}
             >
-              {profile.plan_type === 'pro_plus' && <Crown size={12} />}
-              {profile.plan_type.replace('_', ' ').toUpperCase()}
+              {plan === 'pro_plus' && <Crown size={12} />}
+              {plan === 'none' ? 'NO ACTIVE PLAN' : plan.replace('_', ' ').toUpperCase()}
             </div>
           </div>
         )}
@@ -112,7 +116,7 @@ export const Sidebar = ({ currentPath }: SidebarProps) => {
 
       {/* Footer - Admin & Sign Out */}
       <div className="p-4 border-t border-black">
-        {profile?.is_admin && (
+        {admin && (
           <a
             href="/admin"
             className="flex items-center gap-3 px-4 py-3 rounded-lg text-purple font-semibold hover:bg-purple/10 transition-all duration-250 mb-2"

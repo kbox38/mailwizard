@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Mail, Lock } from 'lucide-react';
+import { Shield } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
@@ -29,7 +29,7 @@ export const AdminLoginPage = () => {
       navigate('/admin/dashboard');
     } catch (error: any) {
       console.error('Login error:', error);
-      toast.error(error.response?.data?.error || 'Invalid credentials');
+      toast.error(error.message || 'Unable to sign in');
     } finally {
       setLoading(false);
     }
@@ -49,25 +49,29 @@ export const AdminLoginPage = () => {
         <div className="card">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold mb-2">Email Address</label>
+              <label htmlFor="admin-email" className="block text-sm font-semibold mb-2">Email Address</label>
               <Input
                 type="email"
+                id="admin-email"
+                autoComplete="email"
+                required
                 placeholder="admin@mailwizard.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                icon={Mail}
                 disabled={loading}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2">Password</label>
+              <label htmlFor="admin-password" className="block text-sm font-semibold mb-2">Password</label>
               <Input
                 type="password"
+                id="admin-password"
+                autoComplete="current-password"
+                required
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                icon={Lock}
                 disabled={loading}
               />
             </div>
@@ -86,7 +90,7 @@ export const AdminLoginPage = () => {
 
           <div className="mt-6 pt-6 border-t border-gray-200">
             <p className="text-sm text-gray-600 text-center">
-              This is a secure area. All access is logged and monitored.
+              Use your Email Wizard account. Administrator access requires a verified email and explicit authorization.
             </p>
           </div>
         </div>

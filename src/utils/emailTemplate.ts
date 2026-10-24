@@ -46,9 +46,7 @@ export function generateEmailTemplate(
     linkedinUrl,
     websiteUrl,
     companyAddress,
-    subjectLine = 'Email from ' + companyName,
-    fromEmail = ''
-  } = settings;
+    subjectLine = 'Email from ' + companyName  } = settings;
 
   return `<!DOCTYPE html>
 <html lang="en">

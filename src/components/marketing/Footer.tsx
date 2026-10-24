@@ -106,7 +106,7 @@ export const Footer = () => {
                       </Link>
                     ) : (
                       <a
-                        href={link.href}
+                        href={link.to}
                         className="text-sm opacity-80 hover:opacity-100 hover:text-gold transition-all duration-250"
                       >
                         {link.label}

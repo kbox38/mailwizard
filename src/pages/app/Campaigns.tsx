@@ -45,8 +45,10 @@ interface Campaign {
   id: string;
   name: string;
   subject: string;
-  content: { html: string };
-  custom_html: { html: string };
+  content: { html: string; recipients?: { sendToMode: 'all' | 'groups' | 'contacts'; selectedContacts: string[]; selectedGroups: string[] } };
+  custom_html: string;
+  preview_text: string;
+  scheduled_at: string | null;
   status: string;
   recipients_count: number;
   opens: number;
@@ -93,7 +95,7 @@ export function Campaigns() {
   const [editingDraftCampaign, setEditingDraftCampaign] = useState<Campaign | null>(null);
   const [deletingCampaign, setDeletingCampaign] = useState<Campaign | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [sendingNow, setSendingNow] = useState<string | null>(null);
+  const [sendingNow] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
   // Send modal state
@@ -391,7 +393,7 @@ const handleCancelCampaign = async (campaign: Campaign) => {
     setSendMode("all");
     setSelectedGroups(new Set());
     setSelectedContacts(new Set());
-    toast.info('No saved recipients found. Please select recipients.');
+    toast('No saved recipients found. Please select recipients.');
   }
 
   setShowSendModal(true);
@@ -1118,7 +1120,7 @@ const handleCancelCampaign = async (campaign: Campaign) => {
               setModalKey(prev => prev + 1);
               setShowCreateModal(false);
             }}
-            onSuccess={(campaign) => {
+            onSuccess={() => {
               window.history.replaceState({}, document.title);
               setIsReturningFromTemplate(false);
               setPreselectedTemplate(null);
@@ -1137,7 +1139,7 @@ const handleCancelCampaign = async (campaign: Campaign) => {
             onClose={() => {
               setEditingDraftCampaign(null);
             }}
-            onSuccess={(campaign) => {
+            onSuccess={() => {
               setEditingDraftCampaign(null);
               fetchCampaigns();
               toast.success("Campaign updated successfully!");

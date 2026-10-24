@@ -22,6 +22,9 @@ export default function OTPInput({
   length = 6 
 }: OTPInputProps) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const lastCompletedValue = useRef('');
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     if (inputRefs.current[0] && !disabled) {
@@ -30,10 +33,12 @@ export default function OTPInput({
   }, [disabled]);
 
   useEffect(() => {
-    if (value.length === length && onComplete) {
-      onComplete(value);
+    if (value.length !== length) lastCompletedValue.current = '';
+    if (!disabled && value.length === length && value !== lastCompletedValue.current) {
+      lastCompletedValue.current = value;
+      onCompleteRef.current?.(value);
     }
-  }, [value, length, onComplete]);
+  }, [value, length, disabled]);
 
   const handleChange = (index: number, digit: string) => {
     if (digit && !/^\d$/.test(digit)) return;

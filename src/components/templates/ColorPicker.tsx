@@ -27,7 +27,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { HexColorPicker } from 'react-colorful';
 import { Palette, X } from 'lucide-react';
-import { Button } from '../ui/Button';
 
 interface ColorPickerProps {
   color: string;

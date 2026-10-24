@@ -191,7 +191,6 @@ export default function AddDomainModal({
                 value={domain}
                 onChange={(e) => handleDomainChange(e.target.value)}
                 disabled={loading}
-                icon={Globe}
               />
               
               {/* Validation Error (real-time) */}

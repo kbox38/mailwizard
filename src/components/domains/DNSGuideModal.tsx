@@ -177,7 +177,7 @@ export default function DNSPlatformGuides({ records, domain }: DNSPlatformGuides
           expandedSteps={expandedSteps}
           toggleStep={toggleStep}
           copyToClipboard={copyToClipboard}
-          copiedField=({ copiedField}
+          copiedField={copiedField}
         />
       )}
 
@@ -500,7 +500,7 @@ function GoDaddyGuide({ records, domain, expandedSteps, toggleStep, copyToClipbo
 }
 
 // ✅ SITEGROUND GUIDE
-function SitegroundGuide({ records, domain, expandedSteps, toggleStep, copyToClipboard, copiedField }: GuideProps) {
+function SitegroundGuide({ records, expandedSteps, toggleStep, copyToClipboard, copiedField }: GuideProps) {
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-bold">Siteground DNS Configuration</h3>
@@ -665,7 +665,7 @@ function GoogleDomainsGuide({ records, domain, expandedSteps, toggleStep, copyTo
 }
 
 // ✅ GENERIC GUIDE
-function GenericGuide({ records, domain, expandedSteps, toggleStep, copyToClipboard, copiedField }: GuideProps) {
+function GenericGuide({ records, expandedSteps, toggleStep, copyToClipboard, copiedField }: GuideProps) {
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-bold">Generic DNS Configuration Guide</h3>

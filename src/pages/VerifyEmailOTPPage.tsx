@@ -8,6 +8,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import OTPInput from '../components/OTPInput';
+import { authErrorMessage, clearPendingVerification, normalizeEmail, readPendingVerification, RESEND_COOLDOWN_SECONDS, resendVerification, savePendingVerification, verifyEmailCode } from '../lib/emailVerification';
 
 export default function VerifyEmailOTPPage() {
   const navigate = useNavigate();
@@ -15,48 +16,46 @@ export default function VerifyEmailOTPPage() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => normalizeEmail(location.state?.email || new URLSearchParams(location.search).get('email') || readPendingVerification().email));
+  const [resendAfter, setResendAfter] = useState(() => {
+    const pending = readPendingVerification();
+    const routeEmail = normalizeEmail(location.state?.email || new URLSearchParams(location.search).get('email') || pending.email);
+    return location.state?.resendAfter || (pending.email === routeEmail ? pending.resendAfter : 0);
+  });
+  const [now, setNow] = useState(Date.now);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [codeRequested, setCodeRequested] = useState(resendAfter > 0);
   const [verified, setVerified] = useState(false);
   const verifyingRef = useRef(false);
+  const resendingRef = useRef(false);
+  const cooldown = Math.max(0, Math.ceil((resendAfter - now) / 1000));
 
   useEffect(() => {
-    const stateEmail = location.state?.email;
-    const queryEmail = new URLSearchParams(location.search).get('email');
-    
-    const userEmail = stateEmail || queryEmail;
-    
-    if (!userEmail) {
-      toast.error('Email address not found. Please sign up again.');
-      navigate('/signup');
-      return;
-    }
-    
-    setEmail(userEmail);
-  }, [location, navigate]);
+    if (resendAfter <= Date.now()) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendAfter]);
 
   const handleVerify = async (code: string) => {
-    if (verifyingRef.current || verified || loading) {
+    if (verifyingRef.current || resendingRef.current || verified || loading) {
       return;
     }
 
-    if (code.length !== 6) {
+    if (!email || !/^\d{6}$/.test(code)) {
       toast.error('Please enter a 6-digit code');
       return;
     }
 
     verifyingRef.current = true;
     setLoading(true);
+    setErrorMessage('');
 
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: email,
-        token: code,
-        type: 'signup'
-      });
-
-      if (error) throw error;
+      const data = await verifyEmailCode(supabase, email, code);
+      clearPendingVerification();
 
       if (data.user) {
+        const verifiedUserId = data.user.id;
         setVerified(true);
         toast.success('Email verified successfully! 🎉', {
           duration: 4000,
@@ -65,7 +64,7 @@ export default function VerifyEmailOTPPage() {
         // Check if there's a pending plan
         const pendingPlan = localStorage.getItem('pending_plan');
         
-        if (pendingPlan && pendingPlan !== 'free') {
+        if (pendingPlan === 'pro' || pendingPlan === 'pro_plus') {
           // User selected paid plan - redirect to checkout
           toast.loading('Redirecting to checkout...', { duration: 2000 });
           
@@ -76,7 +75,7 @@ export default function VerifyEmailOTPPage() {
                 {
                   body: {
                     plan: pendingPlan,
-                    user_id: data.user.id,
+                    user_id: verifiedUserId,
                   },
                 }
               );
@@ -97,25 +96,17 @@ export default function VerifyEmailOTPPage() {
             }
           }, 1000);
         } else {
-          // Free plan or no pending plan - go to dashboard
+          // Accounts without a selected plan choose a subscription next.
           localStorage.removeItem('pending_plan');
           setTimeout(() => {
-            navigate('/app/dashboard');
+            navigate('/subscribe');
           }, 1000);
         }
       }
     } catch (error: any) {
       console.error('OTP verification error:', error);
       
-      if (!verified) {
-        if (error.message?.includes('expired')) {
-          toast.error('Code has expired. Please request a new one.');
-        } else if (error.message?.includes('invalid')) {
-          toast.error('Invalid code. Please check and try again.');
-        } else {
-          toast.error(error.message || 'Verification failed. Please try again.');
-        }
-      }
+      setErrorMessage(authErrorMessage(error));
       
       setOtp('');
     } finally {
@@ -125,22 +116,25 @@ export default function VerifyEmailOTPPage() {
   };
 
   const handleResendCode = async () => {
+    if (resendingRef.current || verifyingRef.current || verified || Date.now() < resendAfter) return;
     if (!email) {
       toast.error('Email address not found');
       return;
     }
 
+    resendingRef.current = true;
     setResending(true);
+    setErrorMessage('');
 
     try {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: email,
-      });
+      await resendVerification(supabase, email, window.location.origin);
+      const nextResend = Date.now() + RESEND_COOLDOWN_SECONDS * 1000;
+      setNow(Date.now());
+      setResendAfter(nextResend);
+      savePendingVerification(email, nextResend);
+      setCodeRequested(true);
 
-      if (error) throw error;
-
-      toast.success('New verification code sent! Check your email.', {
+      toast.success('If this address has an unverified account, a confirmation email has been requested. Check your inbox and spam folder.', {
         duration: 5000,
       });
       
@@ -148,8 +142,15 @@ export default function VerifyEmailOTPPage() {
       setOtp('');
     } catch (error: any) {
       console.error('Resend error:', error);
-      toast.error('Failed to resend code. Please try again.');
+      setErrorMessage(authErrorMessage(error));
+      if (error?.status === 429) {
+        const nextResend = Date.now() + RESEND_COOLDOWN_SECONDS * 1000;
+        setNow(Date.now());
+        setResendAfter(nextResend);
+        savePendingVerification(email, nextResend);
+      }
     } finally {
+      resendingRef.current = false;
       setResending(false);
     }
   };
@@ -160,12 +161,25 @@ export default function VerifyEmailOTPPage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-serif font-bold mb-2">Verify Your Email</h1>
           <p className="text-gray-600">
-            We've sent a 6-digit code to<br />
+            {codeRequested ? 'Check your confirmation email for the code:' : 'Enter the email address you used to sign up.'}<br />
             <span className="font-semibold text-gray-900">{email}</span>
           </p>
         </div>
 
         <div className="bg-white rounded-lg shadow-lg p-8">
+          {errorMessage && <p role="alert" className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{errorMessage}</p>}
+          {!codeRequested && (
+            <form className="mb-6 space-y-3" onSubmit={(event) => { event.preventDefault(); void handleResendCode(); }}>
+              <label htmlFor="verification-email" className="block text-sm font-semibold">Email address</label>
+              <input id="verification-email" type="email" autoComplete="email" required value={email}
+                disabled={resending || loading} onChange={(event) => setEmail(normalizeEmail(event.target.value))}
+                className="w-full rounded-md border border-gray-300 px-3 py-2" />
+              <button type="submit" disabled={resending || loading || cooldown > 0}
+                className="w-full rounded-md bg-yellow-400 px-4 py-3 font-semibold disabled:opacity-50">
+                {resending ? 'Sending...' : cooldown > 0 ? `Try again in ${cooldown}s` : 'Send verification code'}
+              </button>
+            </form>
+          )}
           <div className="mb-6">
             <label className="block text-sm font-semibold text-gray-700 mb-3 text-center">
               Enter Verification Code
@@ -174,13 +188,13 @@ export default function VerifyEmailOTPPage() {
               value={otp}
               onChange={setOtp}
               onComplete={handleVerify}
-              disabled={loading || verified}
+              disabled={loading || resending || verified || !email}
             />
           </div>
 
           <button
             onClick={() => handleVerify(otp)}
-            disabled={loading || otp.length !== 6 || verified}
+            disabled={loading || resending || !email || otp.length !== 6 || verified}
             className="w-full bg-yellow-400 text-black font-semibold py-3 px-4 rounded-md hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mb-4"
           >
             {loading ? (
@@ -198,16 +212,22 @@ export default function VerifyEmailOTPPage() {
             )}
           </button>
 
-          {!verified && (
+          {!verified && codeRequested && (
             <div className="text-center">
               <button
                 onClick={handleResendCode}
-                disabled={resending}
+                disabled={resending || loading || cooldown > 0}
                 className="text-sm text-gray-600 hover:text-gray-900 hover:underline disabled:opacity-50"
               >
-                {resending ? 'Sending...' : "Didn't receive the code? Resend"}
+                {resending ? 'Sending...' : cooldown > 0 ? `Resend in ${cooldown}s` : "Didn't receive the code? Resend"}
               </button>
             </div>
+          )}
+          {!verified && codeRequested && (
+            <button className="mt-4 w-full text-sm text-gray-600 hover:underline" disabled={loading || resending}
+              onClick={() => { setCodeRequested(false); setOtp(''); setErrorMessage(''); }}>
+              Use a different email address
+            </button>
           )}
 
           <div className="mt-6 p-4 bg-blue-50 rounded-lg">

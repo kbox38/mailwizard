@@ -26,6 +26,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { requirePaidAccess } from '../_shared/paidAccess.ts';
 
 // Environment variables
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
@@ -955,14 +956,15 @@ serve(async (req: Request) => {
       throw new Error('Invalid authentication token');
     }
 
-    // Get user's plan type
+    await requirePaidAccess(supabase, user.id);
+    // Get user's protected effective plan.
     const { data: profile } = await supabase
       .from('profiles')
-      .select('plan_type')
+      .select('plan_type,admin_plan_override')
       .eq('id', user.id)
       .single();
 
-    const planType = profile?.plan_type || 'free';
+    const planType = profile?.admin_plan_override ?? profile?.plan_type ?? 'none';
 
     // Parse URL path
     const url = new URL(req.url);

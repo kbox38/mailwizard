@@ -25,7 +25,7 @@
  */
 
 import { useState, useRef, DragEvent, ChangeEvent } from 'react';
-import { Upload, Image as ImageIcon, X, Loader2, Check, AlertCircle } from 'lucide-react';
+import { Upload, X, Loader2, Check, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';

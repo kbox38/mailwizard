@@ -73,12 +73,9 @@ Deno.serve(async (req: Request) => {
       throw new Error('No Stripe customer found');
     }
 
-    if (profile.plan_type === 'free') {
-      throw new Error('Free plan users cannot access billing portal');
-    }
 
     // Get origin for return URL
-    const origin = req.headers.get('origin') || 'http://localhost:5173';
+    const origin = Deno.env.get('APP_URL') || 'https://mailwizard.io';
 
     // Create Customer Portal session
     console.log('Creating portal session for customer:', profile.stripe_customer_id);

@@ -28,7 +28,7 @@ interface VerificationStatusProps {
 /**
  * Verification Status Badge Component
  */
-export default function VerificationStatus({ status, lastVerified }: VerificationStatusProps) {
+export default function VerificationStatus({ status }: VerificationStatusProps) {
   // Get status configuration
   const config = getStatusConfig(status);
 

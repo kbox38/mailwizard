@@ -1,14 +1,22 @@
 import { Worker, Job } from 'bullmq';
-import { EmailJobData } from '../emailQueue';
-import { bullmqConnection } from '../../config/bullmq';
+import { EmailJobData } from '../emailQueue.js';
+import { bullmqConnection } from '../../config/bullmq.js';
 import axios from 'axios';
-import supabase from '../../config/supabase';
+import supabase from '../../config/supabase.js';
 
 const BATCH_SIZE = 1000;
 
 // Process email sending jobs
 async function processEmailJob(job: Job<EmailJobData>) {
   const { campaignId, userId, recipients, emailData } = job.data;
+  const access = await supabase.rpc('has_platform_access', { p_user_id: userId });
+  if (access.error || access.data !== true) throw new Error('An active paid subscription is required');
+  const senderDomain = emailData.fromEmail.split('@')[1]?.toLowerCase();
+  if(senderDomain!=='mail.mailwizard.io') {
+    const {data:domain,error}=await supabase.from('sending_domains').select('id').eq('user_id',userId)
+      .eq('domain',senderDomain || '').eq('verification_status','verified').maybeSingle();
+    if(error || !domain) throw new Error('A verified sender domain is required');
+  }
 
   console.log(`📧 Processing email job ${job.id} for campaign ${campaignId}`);
   console.log(`📊 Recipients: ${recipients.length}`);
@@ -25,7 +33,19 @@ async function processEmailJob(job: Job<EmailJobData>) {
 
   // Process in batches
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-    const batch = recipients.slice(i, i + BATCH_SIZE);
+    const candidates = recipients.slice(i, i + BATCH_SIZE);
+    const {data:current,error:recipientError}=await supabase.from('contacts').select('id,email')
+      .eq('user_id',userId).in('status',['active','subscribed']).in('id',candidates.map(recipient=>recipient.contactId));
+    if(recipientError) throw new Error('Unable to validate current recipient consent');
+    const valid=new Map(current?.map(contact=>[contact.id,contact.email.toLowerCase()]));
+    const batch=candidates.filter(recipient=>valid.get(recipient.contactId)===recipient.email.toLowerCase());
+    if(!batch.length)continue;
+    const allowance = await supabase.rpc('reserve_email_quota', { p_user_id: userId, p_count: batch.length });
+    if (allowance.error || allowance.data !== true) {
+      totalFailed += recipients.length-i;
+      failedEmails.push(...recipients.slice(i).map(recipient=>recipient.email));
+      break;
+    }
 
     // Update job progress
     await job.updateProgress({
@@ -64,13 +84,6 @@ async function processEmailJob(job: Job<EmailJobData>) {
     })
     .eq('id', campaignId);
 
-  // Update usage metrics
-  await supabase.rpc('increment_usage', {
-    p_user_id: userId,
-    p_month: new Date().getMonth() + 1,
-    p_year: new Date().getFullYear(),
-    p_emails_sent: totalSent,
-  });
 
   console.log(`✅ Campaign ${campaignId} completed: ${totalSent} sent, ${totalFailed} failed`);
 

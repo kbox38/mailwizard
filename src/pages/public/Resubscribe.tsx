@@ -11,14 +11,16 @@
  */
 
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Mail, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type FormState = 'idle' | 'submitting' | 'success' | 'error';
 
 export default function Resubscribe() {
-  const [email, setEmail] = useState('');
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token');
+  const [email, setEmail] = useState(searchParams.get('email') || '');
   const [state, setState] = useState<FormState>('idle');
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState<{ email?: string }>({});
@@ -50,7 +52,7 @@ export default function Resubscribe() {
     
     try {
       const { data, error } = await supabase.functions.invoke('resubscribe', {
-        body: { email: email.trim().toLowerCase() }
+        body: { email: email.trim().toLowerCase(), token }
       });
       
       if (error) throw error;
@@ -81,7 +83,7 @@ export default function Resubscribe() {
             Welcome Back!
           </h1>
           <p className="text-gray-600">
-            Enter your email to start receiving our emails again.
+            {token?'Confirm your email to receive emails again.':'Open the unsubscribe link in your email, then choose Re-subscribe.'}
           </p>
         </div>
 
@@ -119,7 +121,7 @@ export default function Resubscribe() {
 
             <button
               type="submit"
-              disabled={state === 'submitting'}
+              disabled={state === 'submitting' || !token}
               className="w-full bg-yellow text-white py-3 rounded-lg font-semibold hover:bg-yellow/90 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg flex items-center justify-center gap-2"
             >
               {state === 'submitting' ? (

@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { authenticateAdmin, requireAdminPermission } from '../../middleware/adminAuth';
-import redis from '../../config/redis';
-import supabase from '../../config/supabase';
+import { authenticateAdmin, requireAdminPermission } from '../../middleware/adminAuth.js';
+import redis from '../../config/redis.js';
+import supabase from '../../config/supabase.js';
 
 const router = Router();
 

@@ -32,7 +32,7 @@ export const Hero = () => {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 animate-slide-up">
             <Button variant="primary" size="lg" icon={ArrowRight} iconPosition="end" onClick={() => navigate('/signup')}>
-              Start Free Trial
+              Choose Your Plan
             </Button>
             <Button variant="secondary" size="lg" onClick={() => navigate('/signup')}>
               Watch Demo
@@ -42,11 +42,11 @@ export const Hero = () => {
           <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-600">
             <div className="flex items-center gap-2">
               <CheckCircle size={20} className="text-gold" />
-              <span>Free forever plan</span>
+              <span>Plans from $29/month</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle size={20} className="text-gold" />
-              <span>No credit card required</span>
+              <span>Pro and Pro Plus</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle size={20} className="text-gold" />

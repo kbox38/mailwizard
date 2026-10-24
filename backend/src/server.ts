@@ -1,10 +1,9 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import { startEmailWorker } from './queues/processors/emailProcessor';
-import redis from './config/redis';
+import { startEmailWorker } from './queues/processors/emailProcessor.js';
+import redis from './config/redis.js';
 
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,8 +19,8 @@ app.use(express.json({ limit: '10mb' }));
 app.get('/health', async (req, res) => {
   const redisStatus = redis.status === 'ready' ? 'healthy' : 'unhealthy';
 
-  res.json({
-    status: 'ok',
+  res.status(redisStatus === 'healthy' ? 200 : 503).json({
+    status: redisStatus === 'healthy' ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     redis: redisStatus,
     uptime: process.uptime(),
@@ -29,21 +28,14 @@ app.get('/health', async (req, res) => {
 });
 
 // Campaign routes
-import campaignRoutes from './routes/campaigns';
+import campaignRoutes from './routes/campaigns.js';
 app.use('/api/campaigns', campaignRoutes);
 
 // Admin routes
-import adminAuthRoutes from './routes/admin/auth';
-import adminDashboardRoutes from './routes/admin/dashboard';
-import adminUsersRoutes from './routes/admin/users';
-import adminSystemRoutes from './routes/admin/system';
+// Administration uses Supabase's verified session and authorized database RPCs.
+// The legacy password/JWT admin API is intentionally no longer mounted.
 
-app.use('/api/admin/auth', adminAuthRoutes);
-app.use('/api/admin/dashboard', adminDashboardRoutes);
-app.use('/api/admin/users', adminUsersRoutes);
-app.use('/api/admin/system', adminSystemRoutes);
 
-console.log('✅ Admin routes registered');
 
 // Start BullMQ worker
 const worker = startEmailWorker();

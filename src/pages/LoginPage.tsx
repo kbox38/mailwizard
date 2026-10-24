@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Logo } from '../components/ui/Logo';
+import { authErrorMessage } from '../lib/emailVerification';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -24,7 +25,7 @@ export default function LoginPage() {
     try {
       await signIn(email, password);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to sign in');
+      toast.error(authErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -37,7 +38,7 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
             <Logo 
-              variant="full" 
+              variant="default"
               size="lg"
               onClick={() => navigate('/')}
             />
@@ -118,6 +119,7 @@ export default function LoginPage() {
             Need a new verification code?{' '}
             <Link 
               to="/verify-email-otp" 
+              state={{ email }}
               className="text-yellow-600 font-semibold hover:underline"
             >
               Resend code

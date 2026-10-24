@@ -24,6 +24,8 @@
  * ============================================================================
  */
 
+import { requirePaidAccess, reserveEmailQuota } from './paidAccess.ts';
+
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const UNSUBSCRIBE_TOKEN_SECRET = Deno.env.get('UNSUBSCRIBE_TOKEN_SECRET') || '';
@@ -287,6 +289,7 @@ async function buildRecipients(
  * 'sending' status. This function sets the final 'sent' status + counts.
  */
 export async function sendCampaign(campaign: any, supabase: any): Promise<SendResult> {
+  await requirePaidAccess(supabase, campaign.user_id);
   const result: SendResult = { recipientCount: 0, sent: 0, failed: 0, batches: 0, skippedInvalid: 0, errors: [] };
 
   const baseHtml = campaign.custom_html || campaign.content?.html || '';
@@ -324,6 +327,7 @@ export async function sendCampaign(campaign: any, supabase: any): Promise<SendRe
       .from('sending_domains')
       .select('domain')
       .eq('id', campaign.content.sending_domain_id)
+      .eq('user_id', campaign.user_id)
       .eq('verification_status', 'verified')
       .single();
     if (domain) {
@@ -331,7 +335,17 @@ export async function sendCampaign(campaign: any, supabase: any): Promise<SendRe
       fromEmail = `${localPart}@${domain.domain}`;
     }
   }
-  if (!fromEmail) fromEmail = campaign.from_email || `noreply@${SHARED_SENDING_DOMAIN}`;
+  if (!fromEmail) {
+    const requested = campaign.from_email || `noreply@${SHARED_SENDING_DOMAIN}`;
+    const domainName = requested.split('@')[1]?.toLowerCase();
+    if (!isValidEmail(requested)) throw new Error('Invalid sender address');
+    if (domainName !== SHARED_SENDING_DOMAIN) {
+      const { data: owned, error } = await supabase.from('sending_domains').select('id')
+        .eq('user_id', campaign.user_id).eq('domain', domainName).eq('verification_status', 'verified').maybeSingle();
+      if (error || !owned) throw new Error('A verified sender domain owned by this account is required');
+    }
+    fromEmail = requested;
+  }
 
   const fromName = campaign.from_name || 'Mail Wizard';
   const constants = {
@@ -443,6 +457,14 @@ export async function sendCampaign(campaign: any, supabase: any): Promise<SendRe
   };
 
   for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+    try {
+      await requirePaidAccess(supabase, campaign.user_id);
+      await reserveEmailQuota(supabase, campaign.user_id, Math.min(BATCH_SIZE, contacts.length-i));
+    } catch (failure: any) {
+      result.failed += contacts.length-i;
+      result.errors.push(failure.message);
+      break;
+    }
     result.batches++;
     await sendWithSplit(contacts.slice(i, i + BATCH_SIZE));
   }

@@ -1,27 +1,8 @@
 import { Check } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { useNavigate } from 'react-router-dom';
 
 const plans = [
-  {
-    name: 'Free',
-    price: '0',
-    description: 'Perfect for getting started',
-    features: [
-      '500 emails per month',
-      'Up to 500 contacts',
-      'Basic email templates',
-      'Shared sending domain',
-      'Basic analytics',
-      'Email support',
-    ],
-    limitations: [
-      'No custom templates',
-      'No merge tags',
-      'No automations',
-    ],
-    cta: 'Start Free',
-    featured: false,
-  },
   {
     name: 'Pro',
     price: '29',
@@ -40,7 +21,7 @@ const plans = [
       'No automations',
       'No API access',
     ],
-    cta: 'Start Pro Trial',
+    cta: 'Choose Pro',
     featured: true,
   },
   {
@@ -60,12 +41,13 @@ const plans = [
       'Dedicated support',
     ],
     limitations: [],
-    cta: 'Start Pro Plus Trial',
+    cta: 'Choose Pro Plus',
     featured: false,
   },
 ];
 
 export const Pricing = () => {
+  const navigate = useNavigate();
   return (
     <section id="pricing" className="py-20 sm:py-32 bg-gray-50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -78,7 +60,7 @@ export const Pricing = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
           {plans.map((plan) => (
             <div
               key={plan.name}
@@ -108,6 +90,7 @@ export const Pricing = () => {
                 size="md"
                 fullWidth
                 className="mb-6"
+                onClick={() => navigate('/signup')}
               >
                 {plan.cta}
               </Button>

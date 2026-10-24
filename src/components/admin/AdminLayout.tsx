@@ -18,14 +18,14 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     { name: 'System', path: '/admin/system', icon: Activity },
   ];
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/admin/login');
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <aside className="w-64 bg-white border-r border-black flex flex-col">
+    <div className="flex min-h-screen flex-col md:flex-row bg-gray-50">
+      <aside className="w-full md:w-64 md:shrink-0 bg-white border-r border-black flex flex-col">
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-2 mb-1">
             <Shield className="text-purple" size={24} />
@@ -72,7 +72,7 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 min-w-0 overflow-auto">{children}</main>
     </div>
   );
 };

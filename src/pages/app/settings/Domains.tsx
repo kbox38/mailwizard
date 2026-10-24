@@ -276,6 +276,7 @@ export default function Domains() {
                 domain={domain}
                 onVerify={handleVerify}
                 onSetDefault={handleSetDefault}
+                onRemoveDefault={async id=>{const result=await domainService.removeDefaultDomain(id);if(!result.success)throw new Error(result.error);await loadDomains();return result;}}
                 onDelete={handleDelete}
                 onViewDNS={handleViewDNS}
               />

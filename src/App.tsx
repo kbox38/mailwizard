@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AdminAuthProvider, useAdminAuth } from './contexts/AdminAuthContext';
@@ -33,7 +33,7 @@ import { Analytics } from './pages/app/Analytics';
 import { Settings } from './pages/app/Settings';
 import TemplateEdit from './pages/app/TemplateEdit';
 import Domains from './pages/app/settings/Domains';
-import { AdminDashboard } from './pages/admin/AdminDashboard';
+import SubscriptionPage from './pages/SubscriptionPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
@@ -44,7 +44,8 @@ import './styles/tour.css';
 
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, hasAccess } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -60,12 +61,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+  if (!hasAccess && location.pathname !== '/app/settings') return <Navigate to="/subscribe" replace />;
 
   return <>{children}</>;
 }
 
 function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { adminUser, loading } = useAdminAuth();
+  const { admin, loading } = useAdminAuth();
 
   if (loading) {
     return (
@@ -78,7 +80,7 @@ function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!adminUser) {
+  if (!admin) {
     return <Navigate to="/admin/login" replace />;
   }
 
@@ -95,6 +97,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route path="/subscribe" element={<SubscriptionPage />} />
             <Route path="/verify-email-otp" element={<VerifyEmailOTPPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/unsubscribe" element={<Unsubscribe />} />

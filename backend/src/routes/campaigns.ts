@@ -1,15 +1,38 @@
 import { Router } from 'express';
-import { queueEmailCampaign, getEmailQueueStats } from '../queues/emailQueue';
-import { CacheService } from '../services/cacheService';
-import supabase from '../config/supabase';
+import { queueEmailCampaign, getEmailQueueStats } from '../queues/emailQueue.js';
+import { CacheService } from '../services/cacheService.js';
+import supabase from '../config/supabase.js';
+import { createClient } from '@supabase/supabase-js';
 
 const router = Router();
+
+// Never trust a userId from the request body: this client bypasses RLS.
+router.use(async (req, res, next) => {
+  const match = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
+  if (!match) return res.status(401).json({ error: 'Authentication required' });
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(match[1]);
+    if (error || !user) return res.status(401).json({ error: 'Invalid session' });
+    if (!user.email_confirmed_at) return res.status(403).json({ error: 'Verify your email before sending' });
+    const caller = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+      global: { headers: { Authorization: req.headers.authorization! } },
+    });
+    const access = await caller.rpc('has_platform_access', { p_user_id: user.id });
+    if (access.error) return res.status(503).json({ error: 'Unable to verify subscription' });
+    if (access.data !== true) return res.status(403).json({ error: 'An active paid subscription is required' });
+    res.locals.caller = caller;
+    res.locals.userId = user.id;
+    next();
+  } catch {
+    return res.status(503).json({ error: 'Unable to validate session' });
+  }
+});
 
 // Send campaign (queue it)
 router.post('/:campaignId/send', async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const userId = req.body.userId;
+    const userId = res.locals.userId;
 
     // Check rate limit
     const rateLimit = await CacheService.checkRateLimit(
@@ -41,7 +64,7 @@ router.post('/:campaignId/send', async (req, res) => {
       }
     }
 
-    if (!campaign) {
+    if (!campaign || campaign.user_id !== userId) {
       return res.status(404).json({ error: 'Campaign not found' });
     }
 
@@ -75,9 +98,9 @@ router.post('/:campaignId/send', async (req, res) => {
       })),
       emailData: {
         subject: campaign.subject,
-        fromEmail: campaign.from_email || 'hello@mailwizard.com',
+        fromEmail: campaign.from_email || 'noreply@mail.mailwizard.io',
         fromName: campaign.from_name || 'Mail Wizard',
-        replyTo: campaign.reply_to || campaign.from_email || 'hello@mailwizard.com',
+        replyTo: campaign.reply_to || campaign.from_email || 'noreply@mail.mailwizard.io',
         htmlBody: campaign.content?.html || '<p>No content</p>',
       },
     });
@@ -98,6 +121,8 @@ router.post('/:campaignId/send', async (req, res) => {
 // Get queue stats
 router.get('/queue/stats', async (req, res) => {
   try {
+    const { data: admin, error } = await res.locals.caller.rpc('is_platform_admin');
+    if (error || admin !== true) return res.status(403).json({ error: 'Admin access required' });
     const stats = await getEmailQueueStats();
     res.json(stats);
   } catch (error: any) {

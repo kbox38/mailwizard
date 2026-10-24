@@ -10,7 +10,7 @@ import { usePlanLimits, useUsageMetrics } from '../../hooks/usePlanLimits';
 import { AlertTriangle } from 'lucide-react';
 
 export const UsageIndicator: React.FC = () => {
-  const { limits, currentPlan, isUnlimited } = usePlanLimits();
+  const { limits } = usePlanLimits();
   const { usage, isLoading } = useUsageMetrics();
 
   if (isLoading) {
@@ -27,7 +27,7 @@ export const UsageIndicator: React.FC = () => {
   const isUnlimitedPlan = emailLimit === -1;
 
   // Calculate percentage
-  const percentage = isUnlimitedPlan ? 0 : Math.min((emailsSent / emailLimit) * 100, 100);
+  const percentage = isUnlimitedPlan || emailLimit === 0 ? 0 : Math.min((emailsSent / emailLimit) * 100, 100);
 
   // Determine color based on usage
   const getProgressColor = () => {

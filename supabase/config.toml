@@ -14,6 +14,18 @@
 
 project_id = "dmgrxgtcmcurjvmxlfvw"
 
+# Local Auth settings. Hosted Auth settings must also be updated in the dashboard;
+# deploying Edge Functions does not upload these settings or email templates.
+[auth.email]
+enable_confirmations = true
+max_frequency = "60s"
+otp_length = 6
+otp_expiry = 3600
+
+[auth.email.template.confirmation]
+subject = "Your Email Wizard verification code"
+content_path = "./supabase/templates/confirmation.html"
+
 # --- Public / externally-triggered functions: JWT verification MUST be off ---
 # The caller cannot present a Supabase JWT, so the platform gate would reject the
 # request before our code runs. Each of these verifies the caller itself.

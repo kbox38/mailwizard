@@ -93,7 +93,7 @@ async function verifyWebhookSignature(
 ): Promise<boolean> {
   if (!SENDGRID_WEBHOOK_VERIFICATION_KEY) {
     console.warn('⚠️  No verification key set - skipping signature verification');
-    return true;
+    return false;
   }
 
   try {
@@ -541,6 +541,8 @@ serve(async (req) => {
     console.log(`   Timestamp: ${timestamp}`);
     console.log(`   Body size: ${rawBody.length} bytes`);
 
+    if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+    if (!signature || !timestamp) return new Response('Unauthorized', { status: 401 });
     // Verify signature
     if (signature && timestamp) {
       const isValid = await verifyWebhookSignature(signature, timestamp, rawBody);

@@ -20,6 +20,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { requirePaidAccess } from '../_shared/paidAccess.ts';
 
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
@@ -92,6 +93,8 @@ Deno.serve(async (req: Request) => {
     if (authError || !user) {
       throw new Error('Invalid authentication token');
     }
+    const caller = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { global: { headers: { Authorization: authHeader } } });
+    await requirePaidAccess(caller, user.id);
 
     // Parse request body
     const { domainId } = await req.json();

@@ -26,7 +26,6 @@ import {
   AlertCircle,
   Ban,
   UserX,
-  TrendingUp,
   Download,
   Filter,
   Calendar

@@ -1,7 +1,9 @@
 import { TrendingUp } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { useNavigate } from 'react-router-dom';
 
 export const Callout = () => {
+  const navigate = useNavigate();
   return (
     <section className="py-20 bg-purple text-white">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -16,8 +18,8 @@ export const Callout = () => {
             Join thousands of businesses using Email Wizard to build better relationships with their customers and grow their revenue.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button variant="primary" size="lg">
-              Get Started Free
+            <Button variant="primary" size="lg" onClick={() => navigate('/signup')}>
+              Choose Your Plan
             </Button>
             <Button variant="secondary" size="lg">
               Talk to Sales

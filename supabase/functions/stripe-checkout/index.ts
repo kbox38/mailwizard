@@ -53,7 +53,13 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Parse request body
-    const { plan, user_id } = await req.json();
+    const { plan, user_id: requestedUserId } = await req.json();
+    const authorization = req.headers.get('authorization') || '';
+    if (!authorization.startsWith('Bearer ')) return new Response(JSON.stringify({error:'Authentication required'}),{status:401,headers:{...corsHeaders,'Content-Type':'application/json'}});
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authorization.slice(7));
+    if (authError || !user) return new Response(JSON.stringify({error:'Invalid session'}),{status:401,headers:{...corsHeaders,'Content-Type':'application/json'}});
+    if (!user.email_confirmed_at || (requestedUserId && requestedUserId !== user.id)) return new Response(JSON.stringify({error:'Not authorized for this account'}),{status:403,headers:{...corsHeaders,'Content-Type':'application/json'}});
+    const user_id = user.id;
 
     if (!plan || !user_id) {
       throw new Error('Missing required fields: plan and user_id');
@@ -66,12 +72,21 @@ Deno.serve(async (req: Request) => {
     // Fetch user profile
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id, email, stripe_customer_id, full_name')
+      .select('id, email, stripe_customer_id, stripe_subscription_id, full_name, account_suspended')
       .eq('id', user_id)
       .single();
 
     if (profileError || !profile) {
       throw new Error('User profile not found');
+    }
+    if (profile.account_suspended) return new Response(JSON.stringify({error:'Account suspended'}),{status:403,headers:{...corsHeaders,'Content-Type':'application/json'}});
+    if (profile.stripe_subscription_id) {
+      try {
+        const current = await stripe.subscriptions.retrieve(profile.stripe_subscription_id);
+        if (['active','trialing','past_due','unpaid','incomplete'].includes(current.status)) {
+          return new Response(JSON.stringify({error:'An existing subscription is linked to this account. Manage it in Account & Billing.'}),{status:409,headers:{...corsHeaders,'Content-Type':'application/json'}});
+        }
+      } catch (failure: any) { if (failure?.statusCode !== 404) throw failure; }
     }
 
     // Create or retrieve Stripe customer
@@ -86,7 +101,7 @@ Deno.serve(async (req: Request) => {
         metadata: {
           supabase_user_id: user_id,
         },
-      });
+      }, { idempotencyKey: `customer:${user.id}` });
       
       customerId = customer.id;
       console.log('Created Stripe customer:', customerId);
@@ -113,7 +128,7 @@ Deno.serve(async (req: Request) => {
     const priceId = priceIds[plan as keyof typeof priceIds];
 
     // Get origin for redirect URLs
-    const origin = req.headers.get('origin') || 'http://localhost:5173';
+    const origin = Deno.env.get('APP_URL') || 'https://mailwizard.io';
 
     // Create checkout session
     console.log('Creating checkout session for plan:', plan);

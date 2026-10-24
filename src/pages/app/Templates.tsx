@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus,
   Eye,
   Edit2,
   Mail,
@@ -102,9 +101,6 @@ export default function Templates() {
 
   const categories = ['all', ...Array.from(new Set(templates.map((t) => t.category)))];
 
-  function handleCreateNew() {
-    navigate('/app/template/editor');
-  }
 
   function handlePreviewTemplate(template: Template) {
     setPreviewTemplate(template);
@@ -114,7 +110,7 @@ export default function Templates() {
   function handleEditTemplate(template: Template) {
   if (template.is_locked) {
     // ✅ FIX: System templates should be duplicated, not edited
-    toast.info('Creating a copy of system template...');
+    toast('Creating a copy of system template...');
     handleDuplicateTemplate(template);
     return;
   }

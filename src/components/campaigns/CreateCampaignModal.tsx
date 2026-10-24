@@ -30,8 +30,8 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, ChevronRight, ChevronLeft, Check, Mail, Users, Calendar, FileText, Loader2, Code, AlertCircle, CheckCircle, Clock, Lock, Save } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, ChevronRight, ChevronLeft, Check, Mail, Users, FileText, Loader2, Code, AlertCircle, CheckCircle, Clock, Lock, Save } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { useAuth } from '../../contexts/AuthContext';
@@ -50,6 +50,12 @@ interface Campaign {
   subject: string;
   status: string;
   created_at: string;
+  content?: { html?: string; description?: string; templateId?: string; recipients?: { sendToMode?: 'all' | 'groups' | 'contacts'; selectedGroups?: string[]; selectedContacts?: string[] }; sending_domain_id?: string };
+  preview_text?: string;
+  from_name?: string;
+  from_email?: string;
+  reply_to?: string;
+  custom_html?: string;
 }
 
 interface CampaignFormData {
@@ -96,7 +102,7 @@ interface ContactGroup {
 interface VerifiedDomain {
   id: string;
   domain: string;
-  verified: boolean;
+  verification_status: string;
 }
 
 interface CreateCampaignModalProps {
@@ -159,7 +165,7 @@ export default function CreateCampaignModal({
   const [totalContacts, setTotalContacts] = useState<number>(0);
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [verifiedDomains, setVerifiedDomains] = useState<VerifiedDomain[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+  const [, setLoadingData] = useState(true);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsError, setContactsError] = useState<string | null>(null);
   const [contactSearchQuery, setContactSearchQuery] = useState('');
@@ -692,7 +698,6 @@ useEffect(() => {
    * Go to next step
    */
   function handleNext() {
-    const newErrors: Record<string, string> = {};
 
     if (currentStep === 1) {
       // Step 1 validation
@@ -1007,11 +1012,9 @@ onClose();
               formData={formData}
               errors={errors}
               updateField={updateField}
-              userPlan={profile?.plan_type || 'free'}
+              userPlan={profile?.admin_plan_override || profile?.plan_type || 'none'}
               allTemplates={allTemplates}
               loadingTemplates={loadingTemplates}
-              onSaveDraft={handleSaveDraft}
-              isSubmitting={isSubmitting}
             />
           )}
 
@@ -1068,7 +1071,7 @@ onClose();
                   variant="primary"
                   onClick={handleNext}
                   icon={ChevronRight}
-                  iconPosition="right"
+                  iconPosition="end"
                 >
                   Next
                 </Button>
@@ -1383,11 +1386,6 @@ function Step2TemplateSelection({
               value={formData.customHtml || ''}
               onChange={(e) => {
                 updateField('customHtml', e.target.value);
-                setErrors(prev => {
-                  const newErrors = { ...prev };
-                  delete newErrors.customHtml;
-                  return newErrors;
-                });
               }}
               className="w-full h-96 px-4 py-3 border-2 border-black rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple resize-y"
               placeholder="<!DOCTYPE html>
@@ -1499,7 +1497,7 @@ function Step2TemplateSelection({
                 </div>
                 <Button
                   variant="secondary"
-                  size="s"
+                  size="sm"
                   onClick={() => updateField('templateId', '')}
                 >
                   Change
@@ -1823,8 +1821,6 @@ function Step4Schedule({
   formData,
   errors,
   updateField,
-  onSaveDraft,
-  isSubmitting,
 }: {
   formData: CampaignFormData;
   errors: Record<string, string>;

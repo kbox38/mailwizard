@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { FileText, Sparkles, Lock } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { EMAIL_TEMPLATES, extractMergeFields } from '../../data/emailTemplates';
-import { Button } from '../ui/Button';
+import { EMAIL_TEMPLATES } from '../../data/emailTemplates';
 
 interface TemplateSelectorProps {
   onSelect: (templateId: string) => void;
@@ -13,7 +12,7 @@ export const TemplateSelector = ({ onSelect, selectedTemplateId }: TemplateSelec
   const { profile } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   
-  const isPlusUser = profile?.plan_type === 'pro_plus';
+  const isPlusUser = (profile?.admin_plan_override ?? profile?.plan_type) === 'pro_plus';
   
   const categories = [
     { id: 'all', name: 'All Templates' },
@@ -54,7 +53,7 @@ export const TemplateSelector = ({ onSelect, selectedTemplateId }: TemplateSelec
       {/* Template Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredTemplates.map((template) => {
-          const hasPersonalization = template.supportsPersonalization;
+          const hasPersonalization = template.is_locked;
           const isLocked = hasPersonalization && !isPlusUser;
           
           return (

@@ -1,7 +1,6 @@
 // src/components/TourReplayButton.tsx
 // Replay tour button for top right corner
 
-import React from 'react';
 import { useTour } from '../hooks/useTour';
 
 export function TourReplayButton() {

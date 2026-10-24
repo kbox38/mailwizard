@@ -19,11 +19,11 @@ export interface PlanFeatures {
   priority_support: boolean;
 }
 
-export const PLAN_LIMITS: Record<'free' | 'pro' | 'pro_plus', PlanFeatures> = {
-  free: {
-    emails_per_month: 500,
-    max_contacts: 500,
-    max_groups: 1,
+export const PLAN_LIMITS: Record<'none' | 'pro' | 'pro_plus', PlanFeatures> = {
+  none: {
+    emails_per_month: 0,
+    max_contacts: 0,
+    max_groups: 0,
     custom_templates: false,
     merge_tags: false,
     automations: false,
@@ -65,10 +65,10 @@ export const PLAN_LIMITS: Record<'free' | 'pro' | 'pro_plus', PlanFeatures> = {
  * Plan pricing information
  */
 export const PLAN_PRICING = {
-  free: {
-    name: 'Free',
+  none: {
+    name: 'No active plan',
     price: 0,
-    description: 'Perfect for getting started',
+    description: 'Choose a subscription to access the platform',
   },
   pro: {
     name: 'Pro',
@@ -95,7 +95,7 @@ export function getMinimumPlanForFeature(feature: keyof PlanFeatures): 'pro' | '
 /**
  * Check if a plan has access to a feature
  */
-export function planHasFeature(plan: 'free' | 'pro' | 'pro_plus', feature: keyof PlanFeatures): boolean {
+export function planHasFeature(plan: 'none' | 'pro' | 'pro_plus', feature: keyof PlanFeatures): boolean {
   const limit = PLAN_LIMITS[plan][feature];
   return typeof limit === 'boolean' ? limit : limit !== 0;
 }
@@ -103,6 +103,6 @@ export function planHasFeature(plan: 'free' | 'pro' | 'pro_plus', feature: keyof
 /**
  * Get human-readable plan name
  */
-export function getPlanDisplayName(plan: 'free' | 'pro' | 'pro_plus'): string {
+export function getPlanDisplayName(plan: 'none' | 'pro' | 'pro_plus'): string {
   return PLAN_PRICING[plan].name;
 }

@@ -11,7 +11,7 @@
  */
 
 import { DNSInstructions } from '../../../lib/services/domainService';
-import { ExternalLink, AlertTriangle, Info, CheckCircle } from 'lucide-react';
+import { ExternalLink, AlertTriangle, CheckCircle } from 'lucide-react';
 import DNSRecordRow from '../DNSRecordRow';
 
 interface GoogleDomainsGuideProps {

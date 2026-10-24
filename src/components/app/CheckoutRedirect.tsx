@@ -19,7 +19,7 @@ export const CheckoutRedirect: React.FC = () => {
       // Check if there's a pending plan selection
       const pendingPlan = localStorage.getItem('pending_plan');
       
-      if (!pendingPlan || pendingPlan === 'free') {
+      if (pendingPlan !== 'pro' && pendingPlan !== 'pro_plus') {
         // No pending checkout, proceed normally
         return;
       }
@@ -44,7 +44,7 @@ export const CheckoutRedirect: React.FC = () => {
           .eq('id', user.id)
           .single();
 
-        if (profile && profile.plan_type !== 'free') {
+        if (profile && (profile.plan_type === 'pro' || profile.plan_type === 'pro_plus')) {
           // User already has paid plan, clear pending
           localStorage.removeItem('pending_plan');
           return;

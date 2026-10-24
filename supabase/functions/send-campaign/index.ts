@@ -16,6 +16,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendCampaign } from '../_shared/campaignSender.ts';
+import { requirePaidAccess } from '../_shared/paidAccess.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -33,17 +34,17 @@ serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('authorization');
-    if (!authHeader) throw new Error('Missing authorization header');
-
-    const { campaign_id } = await req.json();
-    if (!campaign_id) throw new Error('campaign_id is required');
+    if (!authHeader) throw Object.assign(new Error('Authentication required'),{status:401});
 
     // Identify the caller from their JWT.
     const userClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: userError } = await userClient.auth.getUser();
-    if (userError || !user) throw new Error('User not authenticated');
+    if (userError || !user) throw Object.assign(new Error('User not authenticated'),{status:401});
+    await requirePaidAccess(userClient, user.id);
+    const { campaign_id } = await req.json();
+    if (!campaign_id) throw Object.assign(new Error('campaign_id is required'),{status:400});
 
     // Service-role client for the heavy lifting (reads contacts, writes events).
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -54,8 +55,7 @@ serve(async (req) => {
       .eq('id', campaign_id)
       .single();
 
-    if (campaignError || !campaign) throw new Error('Campaign not found');
-    if (campaign.user_id !== user.id) throw new Error('Not authorized for this campaign');
+    if (campaignError || !campaign || campaign.user_id !== user.id) throw Object.assign(new Error('Campaign not found'),{status:404});
 
     if (campaign.status === 'sending' || campaign.status === 'sent') {
       return new Response(
@@ -114,7 +114,7 @@ serve(async (req) => {
     console.error('send-campaign error:', error.message);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: error.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

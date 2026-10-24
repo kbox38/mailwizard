@@ -5,38 +5,55 @@
  * Automatically logs user in and redirects to checkout if they selected a paid plan.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Loader2, CheckCircle } from 'lucide-react';
+import { authErrorMessage, clearPendingVerification } from '../../lib/emailVerification';
 
 export const AuthCallback = () => {
   const navigate = useNavigate();
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
   const [message, setMessage] = useState('Verifying your email...');
+  const started = useRef(false);
 
   useEffect(() => {
-    handleCallback();
+    if (started.current) return;
+    started.current = true;
+    void handleCallback();
   }, []);
 
   const handleCallback = async () => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      const hash = new URLSearchParams(window.location.hash.slice(1));
+      const callbackError = params.get('error_description') || hash.get('error_description');
+      if (callbackError) throw new Error(callbackError);
+      // Support custom confirmation links containing a token hash. Standard
+      // ConfirmationURL links are processed by the Supabase client's URL flow.
+      const tokenHash = params.get('token_hash');
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+        if (error) throw error;
+        window.history.replaceState(null, '', window.location.pathname);
+      }
       // Get the session after email verification
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError) throw sessionError;
 
-      if (!session) {
+      if (!session || !session.user.email_confirmed_at) {
         throw new Error('No session found after verification');
       }
 
       setStatus('success');
+      clearPendingVerification();
       setMessage('Email verified successfully!');
 
       // Check if there's a pending plan
       const pendingPlan = localStorage.getItem('pending_plan');
 
-      if (pendingPlan && pendingPlan !== 'free') {
+      if (pendingPlan === 'pro' || pendingPlan === 'pro_plus') {
         // Paid plan: redirect to checkout
         setMessage('Redirecting to checkout...');
         
@@ -61,7 +78,7 @@ export const AuthCallback = () => {
           throw new Error('Failed to create checkout session');
         }
       } else {
-        // Free plan: go to dashboard
+        // The route guard checks server-side entitlement before app access.
         localStorage.removeItem('pending_plan');
         await new Promise(resolve => setTimeout(resolve, 1000));
         navigate('/app/dashboard');
@@ -69,7 +86,7 @@ export const AuthCallback = () => {
     } catch (error: any) {
       console.error('Callback error:', error);
       setStatus('error');
-      setMessage(error.message || 'Verification failed');
+      setMessage(authErrorMessage(error));
       
       // Redirect to login after error
       setTimeout(() => {

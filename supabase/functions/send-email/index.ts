@@ -27,6 +27,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { requirePaidAccess, reserveEmailQuota } from '../_shared/paidAccess.ts';
 
 // Environment variables
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
@@ -165,6 +166,17 @@ serve(async (req) => {
     if (userError || !user) {
       throw new Error('User not authenticated');
     }
+    await requirePaidAccess(supabase, user.id);
+    if (!contact_id || !campaign_id) throw Object.assign(new Error('A campaign and subscribed contact are required'), { status: 400 });
+    const [contactResult,campaignResult] = await Promise.all([
+      supabase.from('contacts').select('id,email,status').eq('id',contact_id).eq('user_id',user.id).maybeSingle(),
+      supabase.from('campaigns').select('id').eq('id',campaign_id).eq('user_id',user.id).maybeSingle(),
+    ]);
+    if(contactResult.error || campaignResult.error) throw new Error('Unable to validate campaign recipient');
+    if(!campaignResult.data || !contactResult.data || !['active','subscribed'].includes(contactResult.data.status)
+      || contactResult.data.email.trim().toLowerCase()!==String(to).trim().toLowerCase()) {
+      throw Object.assign(new Error('Campaign recipient is unavailable or unsubscribed'),{status:403});
+    }
 
     console.log(`👤 User: ${user.email}`);
 
@@ -290,6 +302,8 @@ serve(async (req) => {
     // =========================================================================
     // SEND VIA SENDGRID
     // =========================================================================
+    const server = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    await reserveEmailQuota(server, user.id, 1);
     const sendGridResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
@@ -317,7 +331,7 @@ serve(async (req) => {
     console.error('❌ Send email error:', error.message);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: error.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

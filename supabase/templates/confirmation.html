@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Confirm your Email Wizard account</title></head>
+  <body style="font-family:Arial,sans-serif;color:#171717;line-height:1.6">
+    <h1>Confirm your email</h1>
+    <p>Enter this code in Email Wizard to finish creating your account:</p>
+    <p style="font-size:32px;font-weight:bold;letter-spacing:6px">{{ .Token }}</p>
+    <p>You can also <a href="{{ .ConfirmationURL }}">confirm your email here</a>.</p>
+    <p>If you did not create this account, you can ignore this email. Do not share your code.</p>
+  </body>
+</html>

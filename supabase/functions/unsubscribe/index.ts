@@ -25,6 +25,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createRecipientToken } from '../_shared/recipientToken.ts';
 
 // CORS headers for preflight requests from the React app
 const corsHeaders = {
@@ -74,7 +75,7 @@ async function validateToken(token: string, secret: string): Promise<{
     const timestamp = parseInt(timestampStr, 10);
 
     // Token expires after 30 days
-    if (Date.now() - timestamp > 30 * 24 * 60 * 60 * 1000) {
+    if (!Number.isFinite(timestamp) || timestamp > Date.now()+60000 || Date.now() - timestamp > 30 * 24 * 60 * 60 * 1000) {
       return { valid: false, error: 'Token expired' };
     }
 
@@ -95,18 +96,20 @@ async function validateToken(token: string, secret: string): Promise<{
  * @param email   - contact email to display (optional)
  * @param appUrl  - Netlify base URL
  */
-function redirectToFrontend(result: string, email: string | null, appUrl: string): Response {
+function redirectToFrontend(result: string, email: string | null, appUrl: string, resubscribeToken?: string): Response {
   const params = new URLSearchParams({ result });
   if (email) params.set('email', email);
+  if (resubscribeToken) params.set('resubscribe_token', resubscribeToken);
 
   const destination = `${appUrl}/unsubscribe?${params.toString()}`;
-  console.log(`↩️  Redirecting to: ${destination}`);
 
   return new Response(null, {
     status: 302,
     headers: {
       ...corsHeaders,
       'Location': destination,
+      'Referrer-Policy': 'no-referrer',
+      'Cache-Control': 'no-store',
     },
   });
 }
@@ -176,7 +179,7 @@ serve(async (req) => {
   // Already unsubscribed — idempotent success
   if (contact.status === 'unsubscribed') {
     console.log(`ℹ️ Already unsubscribed`);
-    return redirectToFrontend('already', contact.email, APP_URL);
+    return redirectToFrontend('already', contact.email, APP_URL, await createRecipientToken(contact_id!,campaign_id!,tokenSecret));
   }
 
   // Update contact status
@@ -226,5 +229,5 @@ serve(async (req) => {
   console.log(`✅ Unsubscribe complete for ${contact.email}`);
 
   // Redirect to React frontend — renders the success UI
-  return redirectToFrontend('success', contact.email, APP_URL);
+  return redirectToFrontend('success', contact.email, APP_URL, await createRecipientToken(contact_id!,campaign_id!,tokenSecret));
 });

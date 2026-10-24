@@ -74,7 +74,7 @@ export default function DomainCard({
    */
   async function handleVerify() {
     setVerifying(true);
-    const result = await onVerify(domain.id);
+    await onVerify(domain.id);
     setVerifying(false);
   }
 
@@ -83,7 +83,7 @@ export default function DomainCard({
    */
   async function handleSetDefault() {
     setSettingDefault(true);
-    const result = await onSetDefault(domain.id);
+    await onSetDefault(domain.id);
     setSettingDefault(false);
   }
 
@@ -97,7 +97,7 @@ export default function DomainCard({
 
     setRemovingDefault(true);
     try {
-      const result = await onRemoveDefault(domain.id);
+      await onRemoveDefault(domain.id);
     } catch (err) {
       console.error('Failed to remove default:', err);
     } finally {
@@ -110,7 +110,7 @@ export default function DomainCard({
    */
   async function handleDelete() {
     setDeleting(true);
-    const result = await onDelete(domain.id);
+    await onDelete(domain.id);
     setDeleting(false);
   }
 

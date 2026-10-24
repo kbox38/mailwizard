@@ -14,11 +14,12 @@ export type Profile = {
   email: string;
   full_name: string | null;
   company_name: string | null;
-  plan_type: 'free' | 'pro' | 'pro_plus';
+  plan_type: 'none' | 'pro' | 'pro_plus';
+  admin_plan_override: 'none' | 'pro' | 'pro_plus' | null;
+  account_suspended: boolean;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   subscription_status: string;
-  is_admin: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -20,7 +20,7 @@ const tabs = [
 ];
 
 export const Settings = () => {
-  const { profile, setProfile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const { createCheckoutSession, loading: checkoutLoading } = useStripeCheckout();
   const { openPortal, loading: portalLoading, error: portalError } = useStripePortal();
@@ -74,8 +74,8 @@ export const Settings = () => {
         .eq('id', user.id)
         .single();
       
-      if (updatedProfile && setProfile) {
-        setProfile(updatedProfile);
+      if (updatedProfile) {
+        await refreshProfile();
         // Update local state to match
         setFullName(updatedProfile.full_name || '');
         setCompanyName(updatedProfile.company_name || '');
@@ -169,10 +169,10 @@ export const Settings = () => {
                     <div>
                       <p className="text-sm text-gray-600 mb-1">Current Plan</p>
                       <p className="text-2xl font-serif font-bold">
-                        {profile?.plan_type.replace('_', ' ').toUpperCase()}
+                        {currentPlan === 'none' ? 'No active plan' : currentPlan.replace('_', ' ').toUpperCase()}
                       </p>
                     </div>
-                    {profile?.plan_type === 'free' && (
+                    {currentPlan === 'none' && (
                       <div className="flex gap-2">
                         <Button
                           variant="primary"
@@ -194,7 +194,7 @@ export const Settings = () => {
                     )}
                   </div>
                 </div>
-                {profile?.plan_type !== 'free' && (
+                {profile?.stripe_customer_id && (
                   <div className="space-y-4">
                     <div>
                       <h3 className="font-semibold mb-2">Subscription Details</h3>
