@@ -34,7 +34,7 @@ export const Header = () => {
           />
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="hidden md:flex items-center gap-4 lg:gap-8">
             <a href="#solutions" className="text-sm font-medium hover:text-gold transition-colors">
               Solutions
             </a>
@@ -47,9 +47,12 @@ export const Header = () => {
           </nav>
 
           {/* Desktop Auth Buttons */}
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-2 lg:gap-4">
             <Button variant="tertiary" size="sm" onClick={() => navigate('/login')}>
               Log In
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/admin')}>
+              Admin login
             </Button>
             <Button variant="primary" size="sm" onClick={() => navigate('/signup')}>
               Sign Up
@@ -61,6 +64,8 @@ export const Header = () => {
             className="md:hidden p-2"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle menu"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="landing-mobile-menu"
           >
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -70,7 +75,7 @@ export const Header = () => {
       {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-black bg-white animate-slide-down">
-          <nav className="flex flex-col p-4 gap-4">
+          <nav id="landing-mobile-menu" className="flex flex-col p-4 gap-4">
             <a href="#solutions" className="text-sm font-medium py-2 hover:text-gold transition-colors">
               Solutions
             </a>
@@ -83,6 +88,9 @@ export const Header = () => {
             <div className="flex flex-col gap-2 mt-4">
               <Button variant="secondary" size="sm" fullWidth onClick={() => navigate('/login')}>
                 Log In
+              </Button>
+              <Button variant="secondary" size="sm" fullWidth onClick={() => { setMobileMenuOpen(false); navigate('/admin'); }}>
+                Admin login
               </Button>
               <Button variant="primary" size="sm" fullWidth onClick={() => navigate('/signup')}>
                 Sign Up
